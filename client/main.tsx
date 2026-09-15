@@ -12,6 +12,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { PaseoProviderSnapshotResult } from "@getpaseo/client";
 import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { buildRoleRunTree, fetchRoleAgents, type RoleRunAgent } from "../shared/role-runs";
 import {
   createRole,
   deleteRole,
@@ -44,6 +45,8 @@ type RoleAgent = {
   status: "initializing" | "idle" | "running" | "error" | "closed";
   title: string | null;
   labels: Record<string, string>;
+  createdAt?: string;
+  archivedAt?: string | null;
 };
 
 const blankRole = (): RoleDraft => ({
@@ -614,16 +617,77 @@ function RoleLauncher({
   );
 }
 
+function RoleRunRow({ agent, role, depth, theme, styles, navigation }: { agent: RoleRunAgent; role?: Role; depth: number; theme: PluginSurfaceProps["theme"]; styles: ReturnType<typeof stylesFor>; navigation?: PluginSurfaceProps["navigation"] }) {
+  const archived = Boolean(agent.archivedAt);
+  return (
+    <Pressable
+      onPress={() => navigation?.openAgent({ agentId: agent.id })}
+      style={[styles.choice, { marginLeft: depth * 20 }, archived && { opacity: 0.55 }]}
+    >
+      <Icon name={depth > 0 ? "GitFork" : "CircleDot"} size={16} color={archived ? theme.colors.foregroundMuted : theme.colors.accent} />
+      <View style={styles.grow}>
+        <Text style={styles.secondaryText}>{role?.name ?? agent.title ?? "Unknown role"}</Text>
+        <Text style={styles.hint}>
+          {agent.title && role?.name && agent.title !== role.name ? `${agent.title} · ` : ""}
+          {agent.status}
+          {archived ? " · archived" : ""}
+        </Text>
+      </View>
+    </Pressable>
+  );
+}
+
 function RoleRuns({ workspaceId, roles, theme, styles, navigation }: { workspaceId: string; roles: Role[]; theme: PluginSurfaceProps["theme"]; styles: ReturnType<typeof stylesFor>; navigation?: PluginSurfaceProps["navigation"] }) {
   const paseo = usePaseo();
-  const runs = useQuery({ queryKey: ["role-orchestrator", workspaceId, "runs"], queryFn: async () => (await paseo.agents.list({ page: { limit: 200 } })).entries as unknown as RoleAgent[], refetchInterval: 5_000 });
+  const [includeArchived, setIncludeArchived] = useState(false);
+  const roleKey = roles.map((role) => role.id).join(",");
+  const runs = useQuery({
+    queryKey: ["role-orchestrator", workspaceId, "runs", includeArchived, roleKey],
+    queryFn: () =>
+      fetchRoleAgents(
+        { list: (options) => paseo.agents.list(options) as unknown as Promise<{ entries: RoleRunAgent[]; pageInfo?: { nextCursor?: string | null } }> },
+        roles,
+        includeArchived,
+      ),
+    refetchInterval: 5_000,
+    enabled: roles.length > 0,
+  });
+
   const roleById = new Map(roles.map((role) => [role.id, role]));
-  const agents = (runs.data ?? []).filter((agent) => agent.workspaceId === workspaceId && Boolean(agent.labels?.[ROLE_LABEL]));
-  if (agents.length === 0) return <Text style={styles.empty}>No role agents in this workspace yet.</Text>;
-  return <View style={{ gap: 8 }}>{agents.map((agent) => {
-    const role = roleById.get(agent.labels[ROLE_LABEL]);
-    return <Pressable key={agent.id} onPress={() => navigation?.openAgent({ agentId: agent.id })} style={styles.choice}><Icon name={agent.parentAgentId ? "GitFork" : "CircleDot"} size={16} color={theme.colors.accent} /><View style={styles.grow}><Text style={styles.secondaryText}>{role?.name ?? agent.title ?? "Unknown role"}</Text><Text style={styles.hint}>{agent.status}{agent.parentAgentId ? " · child agent" : " · root agent"}</Text></View></Pressable>;
-  })}</View>;
+  const { rows, elsewhere } = buildRoleRunTree(runs.data ?? [], workspaceId);
+
+  const archivedToggle = (
+    <Pressable onPress={() => setIncludeArchived((value) => !value)} style={[styles.row, { alignSelf: "flex-start" }]}>
+      <Icon name={includeArchived ? "CheckSquare" : "Square"} size={15} color={theme.colors.foregroundMuted} />
+      <Text style={styles.hint}>Show finished and archived runs</Text>
+    </Pressable>
+  );
+
+  if (roles.length === 0) {
+    return <Text style={styles.empty}>No roles are configured yet. Create one in the Roles catalog first.</Text>;
+  }
+  if (runs.isLoading) return <ActivityIndicator color={theme.colors.accent} />;
+  if (rows.length === 0) {
+    return (
+      <View style={{ gap: 8 }}>
+        <Text style={styles.empty}>
+          {includeArchived ? "No role agents have run in this workspace." : "No active role agents in this workspace."}
+          {elsewhere > 0
+            ? ` ${elsewhere} role ${elsewhere === 1 ? "agent is" : "agents are"} in other workspaces.`
+            : " Launch one above to start."}
+        </Text>
+        {archivedToggle}
+      </View>
+    );
+  }
+  return (
+    <View style={{ gap: 8 }}>
+      {rows.map(({ agent, depth }) => (
+        <RoleRunRow key={agent.id} agent={agent} role={roleById.get(agent.labels[ROLE_LABEL])} depth={depth} theme={theme} styles={styles} navigation={navigation} />
+      ))}
+      {archivedToggle}
+    </View>
+  );
 }
 
 export function RoleWorkspacePanel({ theme, host, layout, workspaceId, navigation }: PluginWorkspacePanelProps) {
