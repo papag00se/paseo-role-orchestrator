@@ -23,9 +23,15 @@ The task text entered when launching an agent is separate from the role's persis
 
 This plugin does not modify provider modes, permission prompts, approval policies, or Paseo's permission handling.
 
-## Current delegation boundary
+## Delegation
 
-The appended parent prompt tells an agent to use Paseo's built-in `create_agent`, monitoring, follow-up, and lifecycle tools. This requires the daemon's normal MCP tool injection (enabled in this installation) and leaves its existing permission behavior untouched. The plugin's UI enforces the role checklist; a dedicated, policy-enforced `launch_role` MCP tool remains a separate native-daemon phase.
+Every role launch runs through one server-side path, so a role run is identical whether it was started from the workspace panel, the **Child roles** panel, or by a parent agent: the child receives the role's operating contract as its system prompt, the role's exact provider/model/reasoning/mode, the role label, the Paseo parent/child link, placement in the parent's own workspace and working tree, and any configured inherited parent context.
+
+Parent roles delegate with the plugin's own `launch_role` tool. It is served over MCP from the plugin process and attached per agent, so only agents this plugin launched can see it; the credential in that agent's configuration identifies the calling parent, which is how the allowed-role checklist is enforced in code rather than in prose. `list_roles` returns the permitted catalog with IDs, provider/model, settings and inherited-context defaults. Both tools are preapproved and always loaded so permission friction never pushes a parent back to generic `create_agent`. A child that may itself delegate is issued its own credential during the launch.
+
+Paseo's built-in `create_agent` has no `roleId` or `systemPrompt` argument, so it cannot perform that launch. The appended parent prompt therefore leads with `launch_role`, and retains the exact role-equivalent `create_agent` recipe—role ID, provider, settings, required label, operating contract, and the parent's own `workspaceId`—only as a fallback for sessions where the tool is unavailable.
+
+The remaining gap is honest: a parent can still call generic `create_agent` directly. Preventing that needs a per-agent tool policy. Paseo's `ProviderPaseoToolsPolicy` (`enabled`, `disabledTools`) resolves per provider and daemon-wide, so disabling `create_agent` for one Supervisor would disable it for every agent on that provider. The plugin does not pretend otherwise, and does not race to archive an already-started unauthorized child.
 
 ## Development
 

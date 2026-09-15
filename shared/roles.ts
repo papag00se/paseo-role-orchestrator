@@ -79,6 +79,19 @@ export const saveCompletionGateSettings = defineRpc({
   output: CompletionGateSettingsSchema,
 });
 
+export const launchRoleRpc = defineRpc({
+  name: "roles.launch",
+  input: z.object({
+    parent: z.object({ agentId: z.string().min(1), roleId }).optional(),
+    workspaceId: z.string().min(1).optional(),
+    role: z.string().min(1),
+    title: z.string().trim().max(200).optional(),
+    prompt: z.string().min(1),
+    parentContext: z.enum(["none", "full", "summary"]).optional(),
+  }),
+  output: z.object({ agentId: z.string(), roleId, roleName: z.string() }),
+});
+
 export const deleteRole = defineRpc({
   name: "roles.delete",
   input: z.object({ id: roleId }),
@@ -91,7 +104,7 @@ export function providerModel(role: Pick<Role, "provider" | "model">): string {
   return `${role.provider}/${role.model}`;
 }
 
-/** The parent alone receives this appendix; a child's description is not persona text. */
+/** The parent receives exact role-equivalent recipes because generic create_agent cannot apply a role by ID. */
 export function systemPromptForRole(role: Role, roles: readonly Role[]): string | undefined {
   const base = role.systemPrompt.trim();
   const children = role.delegation.allowedRoleIds
@@ -99,14 +112,17 @@ export function systemPromptForRole(role: Role, roles: readonly Role[]): string 
     .filter((candidate): candidate is Role => Boolean(candidate));
   const childCatalog = children.length
     ? children
-        .map(
-          (child) =>
-            `- ${child.name}\n  - Description: ${child.description || "No delegation description has been provided."}\n  - Provider/model: ${providerModel(child)}\n  - Reasoning level: ${child.thinkingOptionId ?? "Provider default"}`,
-        )
-        .join("\n")
-    : "- No child roles are currently configured.";
+        .map((child) => {
+          const settings = {
+            ...(child.modeId ? { modeId: child.modeId } : {}),
+            ...(child.thinkingOptionId ? { thinkingOptionId: child.thinkingOptionId } : {}),
+          };
+          return `### ${child.name}\n- Role ID: ${child.id}\n- Description: ${child.description || "No delegation description has been provided."}\n- Provider: ${providerModel(child)}\n- Settings: ${JSON.stringify(settings)}\n- Required label: ${JSON.stringify({ [ROLE_LABEL]: child.id })}\n- Role operating contract to prepend verbatim to the initial task prompt:\n\n<role-operating-contract>\n${child.systemPrompt.trim() || "Follow the assigned task and repository instructions."}\n</role-operating-contract>`;
+        })
+        .join("\n\n")
+    : "No child roles are currently configured.";
   const delegation = role.delegation.enabled
-    ? `## Delegating work\nYou are a parent role and may delegate only to the configured child roles below. Choose a child based on its delegation description; that description is selection guidance, not part of the child's persona.\n\n${childCatalog}\n\nPaseo child-management tools available to you: \`create_agent\` to delegate, \`list_agents\` and \`get_agent_status\` to monitor, \`send_agent_prompt\` to follow up, and \`cancel_agent\`, \`archive_agent\`, or \`update_agent\` to manage an existing child. Create agents in your current workspace so Paseo records them as your children. Do not delegate to roles not listed above.`
+    ? `## Delegating work\nYou are a parent role and may delegate only to the configured child roles below. Prefer the most specific fitting role; use General Purpose only when no specialist role fits.\n\nDelegate with the \`launch_role\` tool. Give it the role and the complete assigned task; it applies the child's role operating contract, exact provider and settings, the required role label, the parent/child link that reports the result back to you, placement in your own workspace, and any configured inherited context. Generic \`create_agent\` does none of that and produces a roleless child that is invisible to role tracking and completion judging. Use \`list_roles\` when choosing an owner, and \`launch_role\` for every child; do not hand-assemble a child with generic \`create_agent\` while \`launch_role\` is available.\n\n\`launch_role\` already places the child beside you. Do not call \`create_workspace\`, and do not create a git worktree, branch, or separate checkout for a child role. If isolation is genuinely required, ask the user first.\n\nOnly if \`launch_role\` is unavailable in this session, fall back to generic \`create_agent\`: pass your own \`workspaceId\`, the catalog entry's exact provider and settings, its required label, and an \`initialPrompt\` that begins with the complete role operating contract followed by a clear \`## Assigned task\` section. Never create an unlabeled child, substitute another provider, omit the operating contract, or delegate to a role not listed here.\n\n${childCatalog}\n\nUse \`list_agents\` and \`get_agent_status\` to monitor, \`send_agent_prompt\` to keep the same owner through its acceptance cohort, and \`cancel_agent\`, \`archive_agent\`, or \`update_agent\` to manage an existing child.`
     : "";
   return [base, delegation].filter(Boolean).join("\n\n") || undefined;
 }

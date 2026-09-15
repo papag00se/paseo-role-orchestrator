@@ -16,11 +16,11 @@ import {
   createRole,
   deleteRole,
   getCompletionGateSettings,
+  launchRoleRpc,
   listRoles,
-  providerModel,
   ROLE_LABEL,
+  providerModel,
   saveCompletionGateSettings,
-  systemPromptForRole,
   type CompletionGateSettings,
   updateRole,
   type Role,
@@ -479,11 +479,11 @@ function CompletionGateSettingsCard({ hostId, theme, styles }: { hostId: string;
   };
   return <View style={styles.card}>
     <Text style={styles.name}>Completion gate settings</Text>
-    <Text style={styles.detail}>The gate runs after each completed turn of an enabled role. It receives the full session by default.</Text>
+    <Text style={styles.detail}>The gate checks user requests, clarification exchanges, and assistant responses against workspace evidence. Oversized evidence is summarized separately using the judge model; the Supervisor is never asked to summarize.</Text>
     <Picker label="Provider" value={draft.provider || null} options={providerOptions} placeholder="Choose a provider" emptyMessage="No ready providers are available." theme={theme} styles={styles} onSelect={(providerId) => setDraft({ ...draft, provider: providerId ?? "", model: "", thinkingOptionId: null })} />
     <Picker label="Model" value={draft.model || null} options={modelOptions} placeholder={draft.provider ? "Choose a model" : "Choose a provider first"} emptyMessage="No selectable models are available." theme={theme} styles={styles} onSelect={(modelId) => { const model = models.find((candidate) => candidate.id === modelId); setDraft({ ...draft, model: modelId ?? "", thinkingOptionId: model?.defaultThinkingOptionId ?? null }); }} />
     <Picker label="Reasoning level" value={draft.thinkingOptionId} options={thinkingOptions} placeholder="Use provider default" emptyMessage="This model does not expose reasoning levels." theme={theme} styles={styles} onSelect={(thinkingOptionId) => setDraft({ ...draft, thinkingOptionId })} />
-    <View><Text style={styles.label}>Gate context</Text>{([ ["full", "Complete session", "Attach the complete, unedited session."], ["summary", "Session summary", "Use a temporary same-model helper to summarize it first."] ] as const).map(([context, title, hint]) => <Pressable key={context} accessibilityRole="radio" accessibilityState={{ checked: draft.context === context }} onPress={() => setDraft({ ...draft, context })} style={[styles.choice, draft.context === context && styles.choiceSelected]}><Icon name={draft.context === context ? "CircleDot" : "Circle"} size={18} color={draft.context === context ? theme.colors.accent : theme.colors.foregroundMuted} /><View style={styles.grow}><Text style={styles.secondaryText}>{title}</Text><Text style={styles.hint}>{hint}</Text></View></Pressable>)}</View>
+    <View><Text style={styles.label}>Gate context</Text>{([ ["full", "Automatic evidence budgeting", "Preserve evidence unchanged when it fits; otherwise summarize in isolated judge-model sessions."], ["summary", "Automatic evidence budgeting (legacy setting)", "Same automatic budgeting; this no longer prompts the parent or forces a summary."] ] as const).map(([context, title, hint]) => <Pressable key={context} accessibilityRole="radio" accessibilityState={{ checked: draft.context === context }} onPress={() => setDraft({ ...draft, context })} style={[styles.choice, draft.context === context && styles.choiceSelected]}><Icon name={draft.context === context ? "CircleDot" : "Circle"} size={18} color={draft.context === context ? theme.colors.accent : theme.colors.foregroundMuted} /><View style={styles.grow}><Text style={styles.secondaryText}>{title}</Text><Text style={styles.hint}>{hint}</Text></View></Pressable>)}</View>
     <View><Text style={styles.label}>Gate prompt</Text><TextInput value={draft.prompt} onChangeText={(prompt) => setDraft({ ...draft, prompt })} multiline textAlignVertical="top" style={[styles.input, { minHeight: 160 }]} /></View>
     <View style={[styles.row, { justifyContent: "flex-end" }]}><Button label="Save completion gate" kind="primary" onPress={() => void saveDraft()} theme={theme} styles={styles} icon="Save" /></View>
   </View>;
@@ -543,8 +543,7 @@ function RoleLauncher({
   workspaceId,
   cwd,
   parentAgentId,
-  parentSession,
-  childContexts,
+  parentRoleId,
   allowedRoleIds,
   theme,
   styles,
@@ -554,8 +553,7 @@ function RoleLauncher({
   workspaceId: string;
   cwd: string;
   parentAgentId?: string;
-  parentSession?: ParentAgentSession;
-  childContexts?: Record<string, "none" | "full" | "summary">;
+  parentRoleId?: string;
   allowedRoleIds?: readonly string[];
   theme: PluginSurfaceProps["theme"];
   styles: ReturnType<typeof stylesFor>;
@@ -571,91 +569,26 @@ function RoleLauncher({
   useEffect(() => {
     if (!selected) setRoleId(allowed[0]?.id ?? null);
   }, [allowed, selected]);
+  const callLaunch = useRpc(launchRoleRpc);
   const launch = async () => {
     if (!selected || !prompt.trim()) return;
     try {
-      const workspace = paseo.workspaces.ref(workspaceId);
-      let childPrompt = prompt.trim();
-      const childContext = selected ? childContexts?.[selected.id] ?? "none" : "none";
-      if (parentAgentId && childContext !== "none") {
-        const timeline = await readCompleteParentTimeline(parentAgentId);
-        if (childContext === "full") {
-          childPrompt += `\n\n## Parent session context (complete and unedited)\n\n${timeline}`;
-        } else {
-          const summary = await summarizeParentTimeline(workspace, parentAgentId, timeline);
-          childPrompt += `\n\n## Parent session context summary\n\n${summary}`;
-        }
-      }
-      const systemPrompt = systemPromptForRole(selected, roles);
-      const agent = await workspace.agents.create({
-        parent: parentAgentId,
+      // Server-side launch: the UI and the `launch_role` tool must produce identical role runs.
+      const result = await callLaunch({
+        ...(parentAgentId ? { parent: { agentId: parentAgentId, roleId: parentRoleId! } } : { workspaceId }),
+        role: selected.id,
         title: selected.name,
-        prompt: childPrompt,
-        labels: { [ROLE_LABEL]: selected.id },
-        config: {
-          provider: providerModel(selected),
-          ...(selected.thinkingOptionId ? { thinkingOptionId: selected.thinkingOptionId } : {}),
-          ...(selected.modeId ? { modeId: selected.modeId } : {}),
-          ...(systemPrompt ? { systemPrompt } : {}),
-        },
+        prompt: prompt.trim(),
       });
       setOpen(false);
       setPrompt("");
-      toast.show(`${selected.name} launched`, { variant: "success" });
-      navigation?.openAgent({ agentId: agent.id });
+      toast.show(`${result.roleName} launched`, { variant: "success" });
+      navigation?.openAgent({ agentId: result.agentId });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to launch role");
     }
   };
 
-  async function readCompleteParentTimeline(agentId: string): Promise<string> {
-    const timeline = paseo.agents.ref(agentId).timeline;
-    let page = await timeline.refetch({ direction: "tail", projection: "canonical" });
-    if (page.error) throw new Error(page.error);
-    const entries = [...page.entries];
-    while (page.hasOlder) {
-      if (!page.startCursor) throw new Error("Could not fetch the complete parent timeline");
-      page = await timeline.refetch({
-        direction: "before",
-        cursor: page.startCursor,
-        projection: "canonical",
-      });
-      if (page.error) throw new Error(page.error);
-      entries.unshift(...page.entries);
-    }
-    return JSON.stringify(entries);
-  }
-
-  async function summarizeParentTimeline(
-    workspace: ReturnType<typeof paseo.workspaces.ref>,
-    parentId: string,
-    timeline: string,
-  ): Promise<string> {
-    if (!parentSession?.model) {
-      throw new Error("The parent agent has no current model to use for a context summary");
-    }
-    const helper = await workspace.agents.create({
-      parent: parentId,
-      title: "Preparing child context",
-      prompt: `Summarize this complete parent-agent timeline for a child agent. Preserve the user's goal, requirements, constraints, relevant repository paths, decisions, findings, work already completed, current state, and explicit acceptance criteria. Do not perform the task or add assumptions.\n\n## Complete parent timeline\n\n${timeline}`,
-      labels: { "paseo-role-orchestrator.context-helper": "true" },
-      config: {
-        provider: `${parentSession.provider}/${parentSession.model}`,
-        ...(parentSession.thinkingOptionId ? { thinkingOptionId: parentSession.thinkingOptionId } : {}),
-        ...(parentSession.currentModeId ? { modeId: parentSession.currentModeId } : {}),
-        systemPrompt: "You prepare accurate delegation context. Return only a concise, faithful summary of the supplied timeline. Do not use tools, modify files, or attempt implementation.",
-      },
-    });
-    try {
-      const result = await helper.waitForFinish();
-      if (result.status !== "idle" || !result.lastMessage) {
-        throw new Error(result.error || `Context summary agent ended with status: ${result.status}`);
-      }
-      return result.lastMessage;
-    } finally {
-      await helper.archive().catch(() => undefined);
-    }
-  }
   if (allowed.length === 0) return <Text style={styles.empty}>{parentAgentId ? "This role is not permitted to invoke any child roles." : "Create a role before launching an agent."}</Text>;
   return (
     <>
@@ -708,5 +641,5 @@ export function RoleAgentPanel({ theme, host, layout, workspaceId, agentId, navi
   const roles = useRoles(host.id).data ?? [];
   const parentRole = roles.find((role) => role.id === agent?.labels[ROLE_LABEL]);
   if (!workspace || !agent) return null;
-  return <View style={styles.screen}><ScrollView contentContainerStyle={styles.content}><Text style={styles.title}>Child roles</Text><Text style={styles.subtitle}>{parentRole ? parentRole.name : agent.title ?? "Agent"}</Text><View style={styles.card}>{parentRole?.delegation.enabled ? <RoleLauncher roles={roles} workspaceId={workspaceId} cwd={workspace.directory} parentAgentId={agentId} parentSession={agent} childContexts={parentRole.delegation.childContexts} allowedRoleIds={parentRole.delegation.allowedRoleIds} theme={theme} styles={styles} navigation={navigation} /> : <Text style={styles.empty}>This agent’s role cannot invoke child roles.</Text>}</View><View style={styles.card}><Text style={styles.name}>Role hierarchy</Text><RoleRuns workspaceId={workspaceId} roles={roles} theme={theme} styles={styles} navigation={navigation} /></View></ScrollView></View>;
+  return <View style={styles.screen}><ScrollView contentContainerStyle={styles.content}><Text style={styles.title}>Child roles</Text><Text style={styles.subtitle}>{parentRole ? parentRole.name : agent.title ?? "Agent"}</Text><View style={styles.card}>{parentRole?.delegation.enabled ? <RoleLauncher roles={roles} workspaceId={workspaceId} cwd={workspace.directory} parentAgentId={agentId} parentRoleId={parentRole.id} allowedRoleIds={parentRole.delegation.allowedRoleIds} theme={theme} styles={styles} navigation={navigation} /> : <Text style={styles.empty}>This agent’s role cannot invoke child roles.</Text>}</View><View style={styles.card}><Text style={styles.name}>Role hierarchy</Text><RoleRuns workspaceId={workspaceId} roles={roles} theme={theme} styles={styles} navigation={navigation} /></View></ScrollView></View>;
 }
