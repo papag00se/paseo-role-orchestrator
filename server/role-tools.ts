@@ -16,6 +16,16 @@ import {
 export const SERVER_KEY = "roles";
 const PROTOCOL_VERSION = "2025-06-18";
 
+/**
+ * Providers whose contract declares `supportsExactMcpPreapproval`. Paseo does not expose
+ * that capability to plugins, and agent creation fails with `tool_policy_unsupported`
+ * when `toolPolicy` reaches a provider without it. Plugin-contributed ACP providers also
+ * support it; they are omitted here only because they cannot be enumerated, which costs
+ * preapproval convenience and nothing else.
+ * See packages/server/src/server/agent/provider-registry.ts (PROVIDER_CONTRACTS).
+ */
+const EXACT_MCP_PREAPPROVAL_PROVIDERS = new Set(["claude", "codex", "opencode"]);
+
 const stateFile = join(
   process.env.PASEO_HOME || join(homedir(), ".paseo"),
   "plugin-data",
@@ -158,7 +168,7 @@ export async function installRoleTools(): Promise<RoleToolsRuntime> {
     return token;
   };
 
-  const configFragment = (token: string): Record<string, unknown> | undefined => {
+  const configFragment = (token: string, provider: string): Record<string, unknown> | undefined => {
     if (!state.port) return undefined;
     return {
       mcpServers: {
@@ -169,12 +179,19 @@ export async function installRoleTools(): Promise<RoleToolsRuntime> {
           alwaysLoad: true,
         },
       },
-      toolPolicy: {
-        preapproved: [
-          { kind: "mcp", server: SERVER_KEY, tool: "launch_role" },
-          { kind: "mcp", server: SERVER_KEY, tool: "list_roles" },
-        ],
-      },
+      // Paseo rejects agent creation outright when a provider cannot preapprove exact MCP
+      // tools, so this is sent only to the providers that can. Everywhere else the tools
+      // still work, they just follow the session's normal permission behaviour.
+      ...(EXACT_MCP_PREAPPROVAL_PROVIDERS.has(provider)
+        ? {
+            toolPolicy: {
+              preapproved: [
+                { kind: "mcp", server: SERVER_KEY, tool: "launch_role" },
+                { kind: "mcp", server: SERVER_KEY, tool: "list_roles" },
+              ],
+            },
+          }
+        : {}),
     };
   };
 
@@ -185,7 +202,7 @@ export async function installRoleTools(): Promise<RoleToolsRuntime> {
     const result = await launchRole(paseo, request, (child, canDelegate) => {
       if (!canDelegate) return undefined;
       issued = mintToken(child.id);
-      return configFragment(issued);
+      return configFragment(issued, child.provider);
     });
     if (issued) {
       const grant = state.grants[issued];

@@ -20,8 +20,9 @@ process.env.PASEO_HOME = home;
 const supervisor = '33333333-3333-4333-8333-333333333333';
 const coder = '11111111-1111-4111-8111-111111111111';
 const secret = '99999999-9999-4999-8999-999999999999';
-const role = (id, name, systemPrompt, delegation) => ({
- id, name, description: `${name} role`, provider: 'pi', model: name.toLowerCase(),
+const codexSupervisor = '44444444-4444-4444-8444-444444444444';
+const role = (id, name, systemPrompt, delegation, provider = 'pi') => ({
+ id, name, description: `${name} role`, provider, model: name.toLowerCase(),
  thinkingOptionId: 'medium', modeId: null, systemPrompt,
  delegation: { enabled: false, allowedRoleIds: [], childContexts: {}, completionGateEnabled: false, ...delegation },
  createdAt: 'now', updatedAt: 'now',
@@ -30,6 +31,7 @@ writeFileSync(join(home, 'plugin-data', 'role-orchestrator.json'), JSON.stringif
  role(supervisor, 'Supervisor', 'Supervise delivery.', { enabled: true, allowedRoleIds: [coder], childContexts: { [coder]: 'none' } }),
  role(coder, 'Coder', 'Own the implementation through acceptance.'),
  role(secret, 'Secret', 'Not delegatable.'),
+ role(codexSupervisor, 'CodexSupervisor', 'Supervise on codex.', { enabled: true, allowedRoleIds: [coder] }, 'codex'),
 ]}));
 
 const { installRoleTools } = await import('./role-tools.ts');
@@ -89,6 +91,16 @@ test('a root launch applies the role config and mints a delegation credential', 
  assert.equal(agent.config.mcpServers.roles.type, 'http');
  assert.match(agent.config.mcpServers.roles.headers.authorization, /^Bearer /);
  assert.equal(agent.config.mcpServers.roles.alwaysLoad, true);
+ // Regression: `pi` cannot preapprove exact MCP tools, and sending toolPolicy anyway made
+ // the daemon reject the whole launch with tool_policy_unsupported.
+ assert.equal(agent.config.toolPolicy, undefined);
+});
+
+test('a provider that supports exact preapproval gets the tools preapproved', async () => {
+ await runtime.launch(fakePaseo, { workspaceId: 'wks_1', role: 'CodexSupervisor', prompt: 'Ship it.' });
+ const agent = created.at(-1);
+ assert.equal(agent.config.provider, 'codex/codexsupervisor');
+ assert.equal(agent.config.mcpServers.roles.type, 'http');
  assert.deepEqual(agent.config.toolPolicy.preapproved.map((ref) => ref.tool).sort(), ['launch_role', 'list_roles']);
 });
 
