@@ -1,7 +1,7 @@
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { registerHooks } from 'node:module';
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -25,21 +25,22 @@ await writeFile(join(home,'plugin-data/role-orchestrator.json'), JSON.stringify(
 await saveCompletionGateSettings({provider:'test',model:'judge',thinkingOptionId:null,modeId:null,prompt:'Judge',context:'full'});
 after(()=>rm(home,{recursive:true,force:true}));
 
-function setup({verdict='pass',overflow=false,stale=false}={}) {
- const hooks=new Map(), created=[], sent=[], archived=[];
+function setup({verdict='pass',overflow=false,stale=false,judgeMessages=null}={}) {
+ const hooks=new Map(), created=[], sent=[], archived=[], gateSends=[];
  const agent={id:'parent',provider:'test',model:'model',cwd:home,workspaceId:'workspace',labels:{'paseo-role-orchestrator.role-id':roleId}};
  const paseo={providers:{listModels:async()=>({models:[{id:'judge'}]})},agents:{ref:()=>({refresh:async()=>({agent}),send:async text=>sent.push(text),run:()=>{throw Error('Supervisor must never summarize')}})},workspaces:{ref:()=>({agents:{create:async options=>{
   created.push(options);
   assert.equal(options.parent,undefined);
   assert.equal(options.config.provider,'test/judge');
-  return {archive:async()=>archived.push(options.title),waitForFinish:async()=>{
+  return {archive:async()=>archived.push(options.title),send:async text=>gateSends.push(text),waitForFinish:async()=>{
    if (stale) hooks.get('agent.turn_started')({agent});
    if (overflow && created.length===1) return {status:'error',error:'Your input exceeds the context window of this model'};
+   if (judgeMessages && options.title==='Completion gate') return {status:'idle',lastMessage:judgeMessages.shift()};
    return {status:'idle',lastMessage:options.title==='Completion evidence summary'?'User asked for tests. Tests passed; verify workspace.':JSON.stringify(verdict==='pass'?{verdict}:{verdict,remainingTasks:['verify tests']})};
   }};
  }}})}};
  const cleanup=installCompletionGate({on:(name,fn)=>{hooks.set(name,fn);return ()=>hooks.delete(name)}});
- return {hooks,created,sent,archived,cleanup,async fire(kind='completed') {
+ return {hooks,created,sent,archived,gateSends,cleanup,async fire(kind='completed') {
   await hooks.get('agent.turn_ended')({agent,outcome:{kind},timeline:[{type:'user_message',text:'Verify tests'},{type:'assistant_message',text:'Evidence '+ 'x'.repeat(7000)}]}, {paseo});
   await new Promise(resolve=>setTimeout(resolve,100));
  }};
@@ -73,4 +74,37 @@ test('judge prompt reserves blocked for a globally blocked ledger',async()=>{
 });
 test('failed parent turns do not launch judges',async()=>{
  const h=setup();try{await h.fire('failed');assert.equal(h.created.length,0)}finally{h.cleanup()}
+});
+test('a prose-wrapped verdict is still extracted',async()=>{
+ const h=setup({judgeMessages:['I inspected the workspace.\n```json\n{"verdict":"continue","remainingTasks":["finish the ledger"]}\n```\nThat is my judgment.']});try{
+  await h.fire();
+  assert.equal(h.gateSends.length,0,'no retry needed');
+  assert.equal(h.sent.length,1);
+  assert.match(h.sent[0],/finish the ledger/);
+ }finally{h.cleanup()}
+});
+test('a malformed verdict gets one constrained retry in the same gate session',async()=>{
+ const h=setup({judgeMessages:['All six cells remain open; more work is required.','{"verdict":"continue","remainingTasks":["finish the ledger"]}']});try{
+  await h.fire();
+  assert.equal(h.gateSends.length,1);
+  assert.match(h.gateSends[0],/Return only the JSON verdict object/);
+  assert.equal(h.sent.length,1);
+  assert.match(h.sent[0],/finish the ledger/);
+ }finally{h.cleanup()}
+});
+test('a persistently malformed verdict fails closed to continue and preserves the raw output',async()=>{
+ await rm(join(home,'plugin-data/role-orchestrator-gate-failures.jsonl'),{force:true});
+ const h=setup({judgeMessages:['All six cells remain open.','Still prose, no JSON.']});try{
+  await h.fire();
+  assert.equal(h.gateSends.length,1);
+  assert.equal(h.sent.length,1,'the parent must not be left idle');
+  assert.match(h.sent[0],/could not produce a valid verdict/);
+  assert.match(h.sent[0],/not yet complete/);
+  const records=(await readFile(join(home,'plugin-data/role-orchestrator-gate-failures.jsonl'),'utf8')).trim().split('\n').map(JSON.parse);
+  assert.equal(records.length,2);
+  assert.equal(records[0].phase,'initial');
+  assert.equal(records[0].raw,'All six cells remain open.');
+  assert.equal(records[1].phase,'retry');
+  assert.equal(records[1].raw,'Still prose, no JSON.');
+ }finally{h.cleanup()}
 });

@@ -12,7 +12,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { PaseoProviderSnapshotResult } from "@getpaseo/client";
 import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
-import { buildRoleRunTree, fetchRoleAgents, type RoleRunAgent } from "../shared/role-runs";
+import { buildRoleRunTree, fetchRoleAgents, PARENT_AGENT_LABEL, type RoleRunAgent } from "../shared/role-runs";
 import {
   createRole,
   deleteRole,
@@ -136,6 +136,10 @@ function stylesFor(theme: PluginSurfaceProps["theme"], compact: boolean) {
     dangerText: { color: theme.colors.statusDanger, fontWeight: "600" },
     input: { color: theme.colors.foreground, backgroundColor: theme.colors.surface2, borderColor: theme.colors.border, borderWidth: 1, borderRadius: 8, paddingHorizontal: 11, paddingVertical: 9, minHeight: 40 },
     label: { color: theme.colors.foreground, fontWeight: "600", marginBottom: 5 },
+    section: { gap: 8 },
+    sectionTitle: { color: theme.colors.foregroundMuted, fontSize: 12, fontWeight: "700", letterSpacing: 0.4, textTransform: "uppercase" },
+    nestedGroup: { marginLeft: 16, paddingLeft: 12, borderLeftWidth: 2, borderLeftColor: theme.colors.border, gap: 8 },
+    childContext: { marginLeft: 16 },
     hint: { color: theme.colors.foregroundMuted, fontSize: 12, marginTop: 4 },
     choice: { borderWidth: 1, borderColor: theme.colors.border, borderRadius: 8, backgroundColor: theme.colors.surface2, padding: 10, flexDirection: "row", alignItems: "center", gap: 9 },
     choiceSelected: { borderColor: theme.colors.accent },
@@ -387,49 +391,55 @@ function RoleEditor({
             <Text style={styles.label}>System / role prompt</Text>
             <TextInput value={draft.systemPrompt} onChangeText={(systemPrompt) => update({ systemPrompt })} multiline textAlignVertical="top" placeholder="Persistent instructions for every agent launched with this role." placeholderTextColor={theme.colors.foregroundMuted} style={[styles.input, { minHeight: 150 }]} />
           </View>
-          <Pressable
-            accessibilityRole="checkbox"
-            accessibilityState={{ checked: draft.delegation.completionGateEnabled, disabled: !completionGateReady }}
-            disabled={!completionGateReady}
-            onPress={() => update({ delegation: { ...draft.delegation, completionGateEnabled: !draft.delegation.completionGateEnabled } })}
-            style={[styles.choice, draft.delegation.completionGateEnabled && styles.choiceSelected, !completionGateReady && { opacity: 0.55 }]}
-          >
-            <Icon name={draft.delegation.completionGateEnabled ? "CheckSquare" : "Square"} size={18} color={draft.delegation.completionGateEnabled ? theme.colors.accent : theme.colors.foregroundMuted} />
-            <View style={styles.grow}><Text style={styles.secondaryText}>Enable completion gate</Text><Text style={styles.hint}>{completionGateReady ? "Run the configured independent completion check after every completed turn." : "To use this feature, open settings and set your completion gate model."}</Text></View>
-          </Pressable>
-          <Pressable
-            accessibilityRole="checkbox"
-            accessibilityState={{ checked: draft.delegation.enabled }}
-            onPress={() => update({ delegation: { ...draft.delegation, enabled: !draft.delegation.enabled } })}
-            style={[styles.choice, draft.delegation.enabled && styles.choiceSelected]}
-          >
-            <Icon name={draft.delegation.enabled ? "CheckSquare" : "Square"} size={18} color={draft.delegation.enabled ? theme.colors.accent : theme.colors.foregroundMuted} />
-            <View style={styles.grow}>
-              <Text style={styles.secondaryText}>Can invoke other roles</Text>
-              <Text style={styles.hint}>Only checked roles below may be launched as this role’s children.</Text>
-            </View>
-          </Pressable>
-          {draft.delegation.enabled ? (
-            <View style={{ gap: 7 }}>
-              <Text style={styles.label}>Allowed child roles</Text>
-              {roles.filter((candidate) => candidate.id !== role?.id).map((candidate) => {
-                const checked = draft.delegation.allowedRoleIds.includes(candidate.id);
-                return (
-                  <View key={candidate.id} style={{ gap: 7 }}>
-                    <Pressable accessibilityRole="checkbox" accessibilityState={{ checked }} onPress={() => toggleAllowed(candidate.id)} style={[styles.choice, checked && styles.choiceSelected]}>
-                      <Icon name={checked ? "CheckSquare" : "Square"} size={18} color={checked ? theme.colors.accent : theme.colors.foregroundMuted} />
-                      <View style={styles.grow}>
-                        <Text style={styles.secondaryText}>{candidate.name}</Text>
-                        <Text style={styles.hint}>{providerModel(candidate)}</Text>
-                      </View>
-                    </Pressable>
-                    {checked ? <Picker label={`Context for ${candidate.name}`} value={draft.delegation.childContexts[candidate.id] ?? "none"} options={[{ id: "none", label: "No parent context", description: "Task prompt and shared workspace only." }, { id: "full", label: "Complete session context", description: "Attach the complete, unedited parent timeline." }, { id: "summary", label: "Session context summary", description: "Create a temporary same-model summary first." }]} placeholder="No parent context" emptyMessage="No context options available." theme={theme} styles={styles} onSelect={(context) => { const nextContext = context === "full" || context === "summary" ? context : "none"; update({ delegation: { ...draft.delegation, childContexts: { ...draft.delegation.childContexts, [candidate.id]: nextContext } } }); }} /> : null}
-                  </View>
-                );
-              })}
-              {roles.filter((candidate) => candidate.id !== role?.id).length === 0 ? <Text style={styles.empty}>Create another role before allowing delegation.</Text> : null}
-            </View>
-          ) : null}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Completion</Text>
+            <Pressable
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: draft.delegation.completionGateEnabled, disabled: !completionGateReady }}
+              disabled={!completionGateReady}
+              onPress={() => update({ delegation: { ...draft.delegation, completionGateEnabled: !draft.delegation.completionGateEnabled } })}
+              style={[styles.choice, draft.delegation.completionGateEnabled && styles.choiceSelected, !completionGateReady && { opacity: 0.55 }]}
+            >
+              <Icon name={draft.delegation.completionGateEnabled ? "CheckSquare" : "Square"} size={18} color={draft.delegation.completionGateEnabled ? theme.colors.accent : theme.colors.foregroundMuted} />
+              <View style={styles.grow}><Text style={styles.secondaryText}>Enable completion gate</Text><Text style={styles.hint}>{completionGateReady ? "Run the configured independent completion check after every completed turn." : "To use this feature, open settings and set your completion gate model."}</Text></View>
+            </Pressable>
+          </View>
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Delegation</Text>
+            <Pressable
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: draft.delegation.enabled }}
+              onPress={() => update({ delegation: { ...draft.delegation, enabled: !draft.delegation.enabled } })}
+              style={[styles.choice, draft.delegation.enabled && styles.choiceSelected]}
+            >
+              <Icon name={draft.delegation.enabled ? "CheckSquare" : "Square"} size={18} color={draft.delegation.enabled ? theme.colors.accent : theme.colors.foregroundMuted} />
+              <View style={styles.grow}>
+                <Text style={styles.secondaryText}>Can invoke other roles</Text>
+                <Text style={styles.hint}>Only checked roles below may be launched as this role’s children.</Text>
+              </View>
+            </Pressable>
+            {draft.delegation.enabled ? (
+              <View style={styles.nestedGroup}>
+                <Text style={styles.label}>Allowed child roles</Text>
+                {roles.filter((candidate) => candidate.id !== role?.id).map((candidate) => {
+                  const checked = draft.delegation.allowedRoleIds.includes(candidate.id);
+                  return (
+                    <View key={candidate.id} style={{ gap: 7 }}>
+                      <Pressable accessibilityRole="checkbox" accessibilityState={{ checked }} onPress={() => toggleAllowed(candidate.id)} style={[styles.choice, checked && styles.choiceSelected]}>
+                        <Icon name={checked ? "CheckSquare" : "Square"} size={18} color={checked ? theme.colors.accent : theme.colors.foregroundMuted} />
+                        <View style={styles.grow}>
+                          <Text style={styles.secondaryText}>{candidate.name}</Text>
+                          <Text style={styles.hint}>{providerModel(candidate)}</Text>
+                        </View>
+                      </Pressable>
+                      {checked ? <View style={styles.childContext}><Picker label="Child context" value={draft.delegation.childContexts[candidate.id] ?? "none"} options={[{ id: "none", label: "No parent context", description: "Task prompt and shared workspace only." }, { id: "full", label: "Complete session context", description: "Attach the complete, unedited parent timeline." }, { id: "summary", label: "Session context summary", description: "Create a temporary same-model summary first." }]} placeholder="No parent context" emptyMessage="No context options available." theme={theme} styles={styles} onSelect={(context) => { const nextContext = context === "full" || context === "summary" ? context : "none"; update({ delegation: { ...draft.delegation, childContexts: { ...draft.delegation.childContexts, [candidate.id]: nextContext } } }); }} /></View> : null}
+                    </View>
+                  );
+                })}
+                {roles.filter((candidate) => candidate.id !== role?.id).length === 0 ? <Text style={styles.empty}>Create another role before allowing delegation.</Text> : null}
+              </View>
+            ) : null}
+          </View>
           <View style={[styles.row, { justifyContent: "flex-end", marginTop: 4 }]}>
             <Button label="Cancel" onPress={() => onOpenChange(false)} theme={theme} styles={styles} />
             <Button label={role ? "Save role" : "Create role"} kind="primary" onPress={() => onSave(draft)} theme={theme} styles={styles} icon="Save" />
@@ -486,7 +496,6 @@ function CompletionGateSettingsCard({ hostId, theme, styles }: { hostId: string;
     <Picker label="Provider" value={draft.provider || null} options={providerOptions} placeholder="Choose a provider" emptyMessage="No ready providers are available." theme={theme} styles={styles} onSelect={(providerId) => setDraft({ ...draft, provider: providerId ?? "", model: "", thinkingOptionId: null })} />
     <Picker label="Model" value={draft.model || null} options={modelOptions} placeholder={draft.provider ? "Choose a model" : "Choose a provider first"} emptyMessage="No selectable models are available." theme={theme} styles={styles} onSelect={(modelId) => { const model = models.find((candidate) => candidate.id === modelId); setDraft({ ...draft, model: modelId ?? "", thinkingOptionId: model?.defaultThinkingOptionId ?? null }); }} />
     <Picker label="Reasoning level" value={draft.thinkingOptionId} options={thinkingOptions} placeholder="Use provider default" emptyMessage="This model does not expose reasoning levels." theme={theme} styles={styles} onSelect={(thinkingOptionId) => setDraft({ ...draft, thinkingOptionId })} />
-    <View><Text style={styles.label}>Gate context</Text>{([ ["full", "Automatic evidence budgeting", "Preserve evidence unchanged when it fits; otherwise summarize in isolated judge-model sessions."], ["summary", "Automatic evidence budgeting (legacy setting)", "Same automatic budgeting; this no longer prompts the parent or forces a summary."] ] as const).map(([context, title, hint]) => <Pressable key={context} accessibilityRole="radio" accessibilityState={{ checked: draft.context === context }} onPress={() => setDraft({ ...draft, context })} style={[styles.choice, draft.context === context && styles.choiceSelected]}><Icon name={draft.context === context ? "CircleDot" : "Circle"} size={18} color={draft.context === context ? theme.colors.accent : theme.colors.foregroundMuted} /><View style={styles.grow}><Text style={styles.secondaryText}>{title}</Text><Text style={styles.hint}>{hint}</Text></View></Pressable>)}</View>
     <View><Text style={styles.label}>Gate prompt</Text><TextInput value={draft.prompt} onChangeText={(prompt) => setDraft({ ...draft, prompt })} multiline textAlignVertical="top" style={[styles.input, { minHeight: 160 }]} /></View>
     <View style={[styles.row, { justifyContent: "flex-end" }]}><Button label="Save completion gate" kind="primary" onPress={() => void saveDraft()} theme={theme} styles={styles} icon="Save" /></View>
   </View>;
@@ -645,7 +654,26 @@ function RoleRuns({ workspaceId, roles, theme, styles, navigation }: { workspace
     queryKey: ["role-orchestrator", workspaceId, "runs", includeArchived, roleKey],
     queryFn: () =>
       fetchRoleAgents(
-        { list: (options) => paseo.agents.list(options) as unknown as Promise<{ entries: RoleRunAgent[]; pageInfo?: { nextCursor?: string | null } }> },
+        {
+          // Agent-list entries are { agent, project }; the fields the panel needs live
+          // under entry.agent, and the parent link is a label, not a top-level field.
+          list: async (options) => {
+            const result = await paseo.agents.list(options);
+            return {
+              entries: result.entries.map(({ agent }): RoleRunAgent => ({
+                id: agent.id,
+                workspaceId: agent.workspaceId ?? "",
+                parentAgentId: agent.labels?.[PARENT_AGENT_LABEL] ?? null,
+                status: agent.status,
+                title: agent.title,
+                labels: agent.labels ?? {},
+                createdAt: agent.createdAt,
+                archivedAt: agent.archivedAt ?? null,
+              })),
+              pageInfo: result.pageInfo,
+            };
+          },
+        },
         roles,
         includeArchived,
       ),
@@ -670,22 +698,22 @@ function RoleRuns({ workspaceId, roles, theme, styles, navigation }: { workspace
   if (rows.length === 0) {
     return (
       <View style={{ gap: 8 }}>
+        {archivedToggle}
         <Text style={styles.empty}>
           {includeArchived ? "No role agents have run in this workspace." : "No active role agents in this workspace."}
           {elsewhere > 0
             ? ` ${elsewhere} role ${elsewhere === 1 ? "agent is" : "agents are"} in other workspaces.`
             : " Launch one above to start."}
         </Text>
-        {archivedToggle}
       </View>
     );
   }
   return (
     <View style={{ gap: 8 }}>
+      {archivedToggle}
       {rows.map(({ agent, depth }) => (
         <RoleRunRow key={agent.id} agent={agent} role={roleById.get(agent.labels[ROLE_LABEL])} depth={depth} theme={theme} styles={styles} navigation={navigation} />
       ))}
-      {archivedToggle}
     </View>
   );
 }

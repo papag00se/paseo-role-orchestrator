@@ -64,7 +64,6 @@ export const CompletionGateSettingsSchema = z.object({
   thinkingOptionId: z.string().trim().max(160).nullable(),
   modeId: z.string().trim().max(160).nullable(),
   prompt: z.string().max(32_000),
-  context: z.enum(["full", "summary"]),
 });
 export type CompletionGateSettings = z.infer<typeof CompletionGateSettingsSchema>;
 

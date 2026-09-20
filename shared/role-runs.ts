@@ -1,5 +1,11 @@
 import { ROLE_LABEL, type Role } from "./roles";
 
+/**
+ * Paseo records a child's parent as this label, not as a top-level field on the
+ * agent-list projection. The hierarchy is derived from it.
+ */
+export const PARENT_AGENT_LABEL = "paseo.parent-agent-id";
+
 export interface RoleRunAgent {
   id: string;
   workspaceId: string;
