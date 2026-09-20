@@ -35,6 +35,9 @@ const VERDICT_RETRY_PROMPT =
 const FAIL_CLOSED_MESSAGE =
   "The completion gate could not produce a valid verdict this turn, so completion is unconfirmed. Treat the ask as not yet complete: continue the remaining work from your unresolved ledger.";
 
+const PARENT_WAKE_MESSAGE =
+  "A task you delegated has finished and you have not resumed to handle it — your turn ended with a launched child and you are not monitoring it. Inspect the child's result now and continue the work; do not remain idle while a delegated result is unhandled or any runnable work remains.";
+
 /** Preserve the exact judge output that failed to parse; losing it hides the failure class. */
 async function recordVerdictFailure(agentId: string, phase: "initial" | "retry", raw: string, error: unknown): Promise<void> {
   console.error("Completion gate verdict unparseable", { agentId, phase, raw });
@@ -138,6 +141,7 @@ function verdict(text: string): Verdict {
 /** Plugin-only completion enforcement through the public v0.8 lifecycle API. */
 export function installCompletionGate(server: PluginServerContext): () => void {
   const pending = new Set<string>();
+  const waking = new Set<string>();
   let stopped = false;
   const parentByChildId = new Map<string, string>();
   const childIdsByParentId = new Map<string, Set<string>>();
@@ -173,6 +177,40 @@ export function installCompletionGate(server: PluginServerContext): () => void {
     childIdsByParentId.delete(agentId);
   };
 
+  // The parent gate only ever runs on the PARENT's own turn_ended, and it bails when a descendant is
+  // active. So when a parent ends its turn while a child works, then the child finishes but the
+  // parent never resumes, nothing revisits the parent — it sleeps on finished work forever. This is
+  // the missing edge: "the last descendant went idle" is itself a reason to look at the parent. If
+  // the parent woke on its own its generation moved (a turn started/ended) and we leave it alone; if
+  // it stayed idle, we nudge it to resume. The real completion gate then runs on that resumed turn.
+  const wakeSleepingParent = async (paseo: PaseoApi, parentId: string): Promise<void> => {
+    if (stopped || waking.has(parentId) || pending.has(parentId) || hasActiveDescendant(parentId)) return;
+    const generation = gateGenerationByAgentId.get(parentId) ?? 0;
+    waking.add(parentId);
+    try {
+      await new Promise<void>((resolve) => setTimeout(resolve, QUIESCENCE_DELAY_MS));
+      // Woke on its own (turn started/ended bumps the generation), a new child began, or a gate is
+      // already in flight — in every case the parent is being handled; do not nudge.
+      if (stopped || gateGenerationByAgentId.get(parentId) !== generation || hasActiveDescendant(parentId) || pending.has(parentId)) return;
+      const snapshot = await paseo.agents.ref(parentId).refresh();
+      const agent = snapshot?.agent;
+      if (!agent || agent.labels[GATE_LABEL]) return;
+      const status = (agent as { status?: string; lastStatus?: string }).status ?? (agent as { lastStatus?: string }).lastStatus;
+      if (status && status !== "idle") return; // a turn is already running; it will gate itself
+      const roleId = agent.labels[ROLE_LABEL];
+      if (!roleId) return;
+      const { roles } = await getRoles();
+      if (!roles.find((role) => role.id === roleId)?.delegation.completionGateEnabled) return;
+      if (gateGenerationByAgentId.get(parentId) !== generation || hasActiveDescendant(parentId) || pending.has(parentId)) return;
+      console.log("Waking a parent that did not resume after a delegated child finished", { agentId: parentId });
+      await paseo.agents.ref(parentId).send(PARENT_WAKE_MESSAGE);
+    } catch (error) {
+      console.error("Failed to wake a sleeping parent", { agentId: parentId, error });
+    } finally {
+      waking.delete(parentId);
+    }
+  };
+
   const removeCreated = server.on("agent.created", ({ agent }) => {
     if (!agent.parentAgentId) return;
     recordChild(agent.id, agent.parentAgentId);
@@ -192,6 +230,10 @@ export function installCompletionGate(server: PluginServerContext): () => void {
     // A finished child can wake its parent. Wait for that coordination turn to settle.
     markChildIdle(event.agent.id);
     const generation = invalidateGate(event.agent.id);
+    // If this was a child finishing, its parent may be asleep on the now-finished work. The parent's
+    // own gate cannot catch that (it only runs on the parent's turn_ended); this edge does.
+    const parentId = parentByChildId.get(event.agent.id);
+    if (parentId && event.outcome.kind === "completed") void wakeSleepingParent(paseo, parentId);
     if (event.outcome.kind !== "completed" || pending.has(event.agent.id)) return;
     await new Promise<void>((resolve) => setTimeout(resolve, QUIESCENCE_DELAY_MS));
     if (gateGenerationByAgentId.get(event.agent.id) !== generation || hasActiveDescendant(event.agent.id)) {

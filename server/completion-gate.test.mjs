@@ -18,10 +18,9 @@ process.env.PASEO_HOME = home;
 await mkdir(join(home,'plugin-data'));
 const { installCompletionGate, saveCompletionGateSettings } = await import('./completion-gate.ts');
 const roleId = '11111111-1111-4111-8111-111111111111';
-await writeFile(join(home,'plugin-data/role-orchestrator.json'), JSON.stringify({roles:[{
- id:roleId,name:'test',provider:'test',model:'model',description:'',systemPrompt:'',thinkingOptionId:null,modeId:null,
- delegation:{enabled:false,allowedRoleIds:[],completionGateEnabled:true},createdAt:'now',updatedAt:'now'
-}]}));
+const childRoleId = '22222222-2222-4222-8222-222222222222';
+const role=(id,gate)=>({id,name:'test',provider:'test',model:'model',description:'',systemPrompt:'',thinkingOptionId:null,modeId:null,delegation:{enabled:false,allowedRoleIds:[],completionGateEnabled:gate},createdAt:'now',updatedAt:'now'});
+await writeFile(join(home,'plugin-data/role-orchestrator.json'), JSON.stringify({roles:[role(roleId,true),role(childRoleId,false)]}));
 await saveCompletionGateSettings({provider:'test',model:'judge',thinkingOptionId:null,modeId:null,prompt:'Judge',context:'full'});
 after(()=>rm(home,{recursive:true,force:true}));
 
@@ -106,5 +105,51 @@ test('a persistently malformed verdict fails closed to continue and preserves th
   assert.equal(records[0].raw,'All six cells remain open.');
   assert.equal(records[1].phase,'retry');
   assert.equal(records[1].raw,'Still prose, no JSON.');
+ }finally{h.cleanup()}
+});
+
+// The parent gate only runs on the PARENT's own turn_ended. A parent that ends its turn while a
+// child works, and never resumes when the child finishes, is otherwise never revisited (confirmed
+// stalling a real Supervisor run). The last descendant going idle must revisit the parent.
+function wakeSetup() {
+ const hooks=new Map(), sent=[], created=[];
+ const parent={id:'parent',workspaceId:'ws',cwd:home,labels:{'paseo-role-orchestrator.role-id':roleId}};
+ const child={id:'child',parentAgentId:'parent',workspaceId:'ws',cwd:home,labels:{'paseo-role-orchestrator.role-id':childRoleId}};
+ const byId={parent,child};
+ const paseo={providers:{listModels:async()=>({models:[{id:'judge'}]})},agents:{ref:id=>({refresh:async()=>({agent:byId[id]}),send:async t=>sent.push({id,t})})},workspaces:{ref:()=>({agents:{create:async o=>{created.push(o);return{archive:async()=>{},waitForFinish:async()=>({status:'idle',lastMessage:'{"verdict":"continue","remainingTasks":["x"]}'})}}}})}};
+ const cleanup=installCompletionGate({on:(name,fn)=>{hooks.set(name,fn);return ()=>hooks.delete(name)}});
+ const childEnded=()=>hooks.get('agent.turn_ended')({agent:{id:'child',parentAgentId:'parent',workspaceId:'ws'},outcome:{kind:'completed'},timeline:[]},{paseo});
+ return {hooks,sent,created,cleanup,childEnded,
+  woke:()=>sent.filter(s=>s.id==='parent' && /did not resume|not monitoring/i.test(s.t)).length};
+}
+
+test('a parent that never resumes after its last child finishes is woken', async()=>{
+ const h=wakeSetup();try{
+  await h.hooks.get('agent.created')({agent:{id:'child',parentAgentId:'parent'}});
+  await h.childEnded();
+  await new Promise(r=>setTimeout(r,1300));
+  assert.equal(h.woke(),1);
+ }finally{h.cleanup()}
+});
+
+test('a parent that resumes on its own is not woken', async()=>{
+ const h=wakeSetup();try{
+  await h.hooks.get('agent.created')({agent:{id:'child',parentAgentId:'parent'}});
+  const ended=h.childEnded();
+  // The parent starts its own turn during quiescence — its generation moves, so no nudge.
+  await new Promise(r=>setTimeout(r,150));
+  h.hooks.get('agent.turn_started')({agent:{id:'parent'}});
+  await ended; await new Promise(r=>setTimeout(r,1300));
+  assert.equal(h.woke(),0);
+ }finally{h.cleanup()}
+});
+
+test('a parent with another child still working is not woken early', async()=>{
+ const h=wakeSetup();try{
+  await h.hooks.get('agent.created')({agent:{id:'child',parentAgentId:'parent'}});
+  await h.hooks.get('agent.created')({agent:{id:'child2',parentAgentId:'parent'}});
+  await h.childEnded();  // one finishes; a sibling is still active
+  await new Promise(r=>setTimeout(r,1300));
+  assert.equal(h.woke(),0);
  }finally{h.cleanup()}
 });
