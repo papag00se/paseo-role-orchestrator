@@ -24,7 +24,7 @@ await writeFile(join(home,'plugin-data/role-orchestrator.json'), JSON.stringify(
 await saveCompletionGateSettings({provider:'test',model:'judge',thinkingOptionId:null,modeId:null,prompt:'Judge',context:'full'});
 after(()=>rm(home,{recursive:true,force:true}));
 
-function setup({verdict='pass',overflow=false,stale=false,judgeMessages=null,liveDescendants=[],listThrows=false,hangFirstJudge=false}={}) {
+function setup({verdict='pass',overflow=false,stale=false,judgeMessages=null,liveDescendants=[],listThrows=false,hangFirstJudge=false,emitJudgeLifecycle=false}={}) {
  const hooks=new Map(), created=[], sent=[], archived=[], gateSends=[];
  let releaseJudge;const judgeHang=new Promise(resolve=>releaseJudge=resolve);let gateCount=0;
  const agent={id:'parent',provider:'test',model:'model',cwd:home,workspaceId:'workspace',labels:{'paseo-role-orchestrator.role-id':roleId}};
@@ -33,7 +33,11 @@ function setup({verdict='pass',overflow=false,stale=false,judgeMessages=null,liv
   assert.equal(options.parent,undefined);
   assert.equal(options.config.provider,'test/judge');
   const gateIndex=options.title==='Completion gate'?++gateCount:0;
-  return {archive:async()=>archived.push(options.title),send:async text=>gateSends.push(text),waitForFinish:async()=>{
+  // The role-runs panel labels gate agents with paseo.parent-agent-id so they nest under
+  // the role; the daemon then reports them as CHILDREN of the supervisor in lifecycle
+  // events (which carry title and parentAgentId, never labels).
+  if (emitJudgeLifecycle) hooks.get('agent.created')?.({agent:{id:'own-'+created.length,parentAgentId:'parent',workspaceId:'workspace',title:options.title,provider:'test',cwd:home}});
+  return {id:'own-'+created.length,archive:async()=>archived.push(options.title),send:async text=>gateSends.push(text),waitForFinish:async()=>{
    if (hangFirstJudge && gateIndex===1) await judgeHang;
    if (stale) hooks.get('agent.turn_started')({agent});
    if (overflow && created.length===1) return {status:'error',error:'Your input exceeds the context window of this model'};
@@ -42,7 +46,7 @@ function setup({verdict='pass',overflow=false,stale=false,judgeMessages=null,liv
   }};
  }}})}};
  const cleanup=installCompletionGate({on:(name,fn)=>{hooks.set(name,fn);return ()=>hooks.delete(name)}});
- return {hooks,created,sent,archived,gateSends,cleanup,releaseJudge,async fire(kind='completed') {
+ return {hooks,created,sent,archived,gateSends,cleanup,releaseJudge,paseo,async fire(kind='completed') {
   await hooks.get('agent.turn_ended')({agent,outcome:{kind},timeline:[{type:'user_message',text:'Verify tests'},{type:'assistant_message',text:'Evidence '+ 'x'.repeat(7000)}]}, {paseo});
   await new Promise(resolve=>setTimeout(resolve,100));
  }};
@@ -110,6 +114,24 @@ test('context overflow creates isolated summaries and retries the judge',async()
   assert.ok(h.created.some(o=>o.title==='Completion evidence summary'));
   assert.equal(h.created.at(-1).title,'Completion gate');
   assert.equal(h.archived.length,h.created.length);
+ }finally{h.cleanup()}
+});
+// Reproduces the self-devouring-gate incident: the panel's parent label makes the daemon
+// report the gate's own judge as the supervisor's delegated child. Creating the judge then
+// invalidated the very check that created it (every verdict born stale, never delivered),
+// and the judge finishing fired the sleeping-parent wake — a self-sustaining wake→check→
+// judge→wake loop, observed live at one false wake and one wasted judge every ~90s.
+test("the gate's own judge is never treated as a delegated child",async()=>{
+ const h=setup({verdict:'continue',emitJudgeLifecycle:true});try{
+  await h.fire();
+  assert.equal(h.created.length,1);
+  assert.equal(h.sent.length,1,'the verdict is delivered — creating our own judge did not stale the check');
+  assert.match(h.sent[0],/completion gate judged/i);
+  // The judge's own turn ending must neither wake the supervisor nor launch another check.
+  await h.hooks.get('agent.turn_ended')({agent:{id:'own-1',parentAgentId:'parent',workspaceId:'workspace',title:'Completion gate',provider:'test',cwd:home},outcome:{kind:'completed'},timeline:[]},{paseo:h.paseo});
+  await new Promise(resolve=>setTimeout(resolve,1300));
+  assert.equal(h.created.length,1,'no follow-on judge for our own agent');
+  assert.equal(h.sent.length,1,'no sleeping-parent wake from our own judge finishing');
  }finally{h.cleanup()}
 });
 // Reproduces the dropped-verdict incident: a turn ended while an earlier check's judge was
