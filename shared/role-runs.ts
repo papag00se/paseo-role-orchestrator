@@ -5,6 +5,9 @@ import { ROLE_LABEL, type Role } from "./roles";
  * agent-list projection. The hierarchy is derived from it.
  */
 export const PARENT_AGENT_LABEL = "paseo.parent-agent-id";
+/** Marks isolated judge and evidence-summary agents created by the completion gate. */
+export const COMPLETION_AGENT_LABEL = "paseo-role-orchestrator.completion-gate";
+export const COMPLETION_AGENT_KINDS = ["judge", "summary"] as const;
 
 export interface RoleRunAgent {
   id: string;
@@ -44,22 +47,27 @@ export interface RoleRunSource {
 export const MAX_RUN_PAGES = 20;
 
 /**
- * Role runs carry an exact label value, so the daemon can filter them. The panel used to
- * request one daemon-wide page of 200 agents and filter in the client, which silently lost
- * runs once the daemon held more agents than that.
+ * Every tracked run carries an exact label value, so the daemon can filter it. The panel used
+ * to request one daemon-wide page of 200 agents and filter in the client, which silently lost
+ * runs once the daemon held more agents than that. Completion judges and evidence summaries
+ * have their own marker rather than a role ID, so include both kinds explicitly.
  */
 export async function fetchRoleAgents(
   source: RoleRunSource,
   roles: readonly Role[],
   includeArchived: boolean,
 ): Promise<RoleRunAgent[]> {
+  const filters = [
+    ...roles.map((role) => ({ [ROLE_LABEL]: role.id })),
+    ...COMPLETION_AGENT_KINDS.map((kind) => ({ [COMPLETION_AGENT_LABEL]: kind })),
+  ];
   const byId = new Map<string, RoleRunAgent>();
   await Promise.all(
-    roles.map(async (role) => {
+    filters.map(async (labels) => {
       let cursor: string | undefined;
       for (let page = 0; page < MAX_RUN_PAGES; page += 1) {
         const result = await source.list({
-          filter: { labels: { [ROLE_LABEL]: role.id }, includeArchived },
+          filter: { labels, includeArchived },
           page: { limit: 200, ...(cursor ? { cursor } : {}) },
         });
         for (const entry of result.entries) byId.set(entry.id, entry);

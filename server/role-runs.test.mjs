@@ -10,7 +10,7 @@ registerHooks({resolve(specifier, context, next) {
  }
 }});
 
-const { buildRoleRunTree, fetchRoleAgents, MAX_RUN_PAGES } = await import('../shared/role-runs.ts');
+const { buildRoleRunTree, COMPLETION_AGENT_KINDS, COMPLETION_AGENT_LABEL, fetchRoleAgents, MAX_RUN_PAGES } = await import('../shared/role-runs.ts');
 const { ROLE_LABEL } = await import('../shared/roles.ts');
 
 const supervisor = '33333333-3333-4333-8333-333333333333';
@@ -31,8 +31,8 @@ test('each role is filtered by the daemon and every page is followed', async () 
  };
  const source = { list: async (options) => {
   const roleId = options.filter.labels[ROLE_LABEL];
-  calls.push({ roleId, cursor: options.page.cursor, includeArchived: options.filter.includeArchived });
-  return pages[roleId].shift();
+  calls.push({ roleId, labels: options.filter.labels, cursor: options.page.cursor, includeArchived: options.filter.includeArchived });
+  return pages[roleId]?.shift() ?? { entries: [] };
  } };
  const found = await fetchRoleAgents(source, roles, false);
  assert.deepEqual(found.map((entry) => entry.id).sort(), ['c1', 's1', 's2']);
@@ -40,11 +40,22 @@ test('each role is filtered by the daemon and every page is followed', async () 
  assert.equal(calls.filter((call) => call.roleId === supervisor).length, 2);
  assert.equal(calls.find((call) => call.cursor)?.cursor, 'c1');
  assert.ok(calls.every((call) => call.includeArchived === false));
+ assert.deepEqual(
+  calls
+   .filter((call) => call.roleId === undefined)
+   .map((call) => call.labels[COMPLETION_AGENT_LABEL])
+   .sort(),
+  [...COMPLETION_AGENT_KINDS].sort(),
+ );
 });
 
 test('paging is bounded so a broken cursor cannot spin forever', async () => {
  let requests = 0;
- const source = { list: async () => { requests += 1; return { entries: [agent(`a${requests}`)], pageInfo: { nextCursor: 'always' } }; } };
+ const source = { list: async (options) => {
+  if (options.filter.labels[ROLE_LABEL] !== coder) return { entries: [] };
+  requests += 1;
+  return { entries: [agent(`a${requests}`)], pageInfo: { nextCursor: 'always' } };
+ } };
  await fetchRoleAgents(source, [{ id: coder }], false);
  assert.equal(requests, MAX_RUN_PAGES);
 });
@@ -54,6 +65,20 @@ test('includeArchived is passed through to the daemon', async () => {
  const source = { list: async (options) => { seen = options.filter.includeArchived; return { entries: [] }; } };
  await fetchRoleAgents(source, [{ id: coder }], true);
  assert.equal(seen, true);
+});
+
+test('completion calls are fetched and nest under the role they evaluated', async () => {
+ const completion = agent('gate', {
+  parentAgentId: 'root',
+  labels: { [COMPLETION_AGENT_LABEL]: 'judge' },
+  title: 'Completion gate',
+ });
+ const source = { list: async (options) =>
+  options.filter.labels[COMPLETION_AGENT_LABEL] === 'judge' ? { entries: [completion] } : { entries: [] } };
+ const found = await fetchRoleAgents(source, [], true);
+ assert.deepEqual(found, [completion]);
+ const { rows } = buildRoleRunTree([agent('root'), ...found], 'wks_1');
+ assert.deepEqual(rows.map((row) => [row.agent.id, row.depth]), [['root', 0], ['gate', 1]]);
 });
 
 test('the tree nests children under their parent and orders siblings oldest first', () => {

@@ -12,7 +12,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { PaseoProviderSnapshotResult } from "@getpaseo/client";
 import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
-import { buildRoleRunTree, fetchRoleAgents, PARENT_AGENT_LABEL, type RoleRunAgent } from "../shared/role-runs";
+import { buildRoleRunTree, COMPLETION_AGENT_LABEL, fetchRoleAgents, PARENT_AGENT_LABEL, type RoleRunAgent } from "../shared/role-runs";
 import {
   createRole,
   deleteRole,
@@ -628,6 +628,8 @@ function RoleLauncher({
 
 function RoleRunRow({ agent, role, depth, theme, styles, navigation }: { agent: RoleRunAgent; role?: Role; depth: number; theme: PluginSurfaceProps["theme"]; styles: ReturnType<typeof stylesFor>; navigation?: PluginSurfaceProps["navigation"] }) {
   const archived = Boolean(agent.archivedAt);
+  const completionKind = agent.labels[COMPLETION_AGENT_LABEL];
+  const completionName = completionKind === "judge" ? "Completion gate" : completionKind === "summary" ? "Completion evidence summary" : null;
   return (
     <Pressable
       onPress={() => navigation?.openAgent({ agentId: agent.id })}
@@ -635,9 +637,9 @@ function RoleRunRow({ agent, role, depth, theme, styles, navigation }: { agent: 
     >
       <Icon name={depth > 0 ? "GitFork" : "CircleDot"} size={16} color={archived ? theme.colors.foregroundMuted : theme.colors.accent} />
       <View style={styles.grow}>
-        <Text style={styles.secondaryText}>{role?.name ?? agent.title ?? "Unknown role"}</Text>
+        <Text style={styles.secondaryText}>{completionName ?? role?.name ?? agent.title ?? "Unknown role"}</Text>
         <Text style={styles.hint}>
-          {agent.title && role?.name && agent.title !== role.name ? `${agent.title} · ` : ""}
+          {agent.title && (completionName ?? role?.name) && agent.title !== (completionName ?? role?.name) ? `${agent.title} · ` : ""}
           {agent.status}
           {archived ? " · archived" : ""}
         </Text>
