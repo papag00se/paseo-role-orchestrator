@@ -24,14 +24,17 @@ await writeFile(join(home,'plugin-data/role-orchestrator.json'), JSON.stringify(
 await saveCompletionGateSettings({provider:'test',model:'judge',thinkingOptionId:null,modeId:null,prompt:'Judge',context:'full'});
 after(()=>rm(home,{recursive:true,force:true}));
 
-function setup({verdict='pass',overflow=false,stale=false,judgeMessages=null,liveDescendants=[],listThrows=false}={}) {
+function setup({verdict='pass',overflow=false,stale=false,judgeMessages=null,liveDescendants=[],listThrows=false,hangFirstJudge=false}={}) {
  const hooks=new Map(), created=[], sent=[], archived=[], gateSends=[];
+ let releaseJudge;const judgeHang=new Promise(resolve=>releaseJudge=resolve);let gateCount=0;
  const agent={id:'parent',provider:'test',model:'model',cwd:home,workspaceId:'workspace',labels:{'paseo-role-orchestrator.role-id':roleId}};
  const paseo={providers:{listModels:async()=>({models:[{id:'judge'}]})},agents:{list:async()=>{if(listThrows)throw new Error('daemon unreachable');return {entries:[{agent},...liveDescendants.map(a=>({agent:a}))]}},ref:()=>({refresh:async()=>({agent}),send:async text=>sent.push(text),run:()=>{throw Error('Supervisor must never summarize')}})},workspaces:{ref:()=>({agents:{create:async options=>{
   created.push(options);
   assert.equal(options.parent,undefined);
   assert.equal(options.config.provider,'test/judge');
+  const gateIndex=options.title==='Completion gate'?++gateCount:0;
   return {archive:async()=>archived.push(options.title),send:async text=>gateSends.push(text),waitForFinish:async()=>{
+   if (hangFirstJudge && gateIndex===1) await judgeHang;
    if (stale) hooks.get('agent.turn_started')({agent});
    if (overflow && created.length===1) return {status:'error',error:'Your input exceeds the context window of this model'};
    if (judgeMessages && options.title==='Completion gate') return {status:'idle',lastMessage:judgeMessages.shift()};
@@ -39,7 +42,7 @@ function setup({verdict='pass',overflow=false,stale=false,judgeMessages=null,liv
   }};
  }}})}};
  const cleanup=installCompletionGate({on:(name,fn)=>{hooks.set(name,fn);return ()=>hooks.delete(name)}});
- return {hooks,created,sent,archived,gateSends,cleanup,async fire(kind='completed') {
+ return {hooks,created,sent,archived,gateSends,cleanup,releaseJudge,async fire(kind='completed') {
   await hooks.get('agent.turn_ended')({agent,outcome:{kind},timeline:[{type:'user_message',text:'Verify tests'},{type:'assistant_message',text:'Evidence '+ 'x'.repeat(7000)}]}, {paseo});
   await new Promise(resolve=>setTimeout(resolve,100));
  }};
@@ -108,6 +111,25 @@ test('context overflow creates isolated summaries and retries the judge',async()
   assert.equal(h.created.at(-1).title,'Completion gate');
   assert.equal(h.archived.length,h.created.length);
  }finally{h.cleanup()}
+});
+// Reproduces the dropped-verdict incident: a turn ended while an earlier check's judge was
+// still running. Single-flight suppression skipped the newer turn's check AND the older
+// verdict finished stale and was discarded — total silence over runnable work, and the
+// supervisor slept on it. Every completed turn must get its own check.
+test('a turn ending during an in-flight judge gets its own check; the stale verdict is discarded visibly',async()=>{
+ const logs=[];const original=console.log;console.log=(...args)=>logs.push(args);
+ const h=setup({verdict:'continue',hangFirstJudge:true});try{
+  await h.fire();                       // turn A; its judge hangs in flight
+  assert.equal(h.created.length,1);
+  assert.equal(h.sent.length,0,'no verdict while the judge hangs');
+  await h.fire();                       // turn B ends while A's judge is still running
+  assert.equal(h.created.length,2,'turn B launches its own judge');
+  assert.equal(h.sent.length,1,'turn B verdict is delivered on fresh evidence');
+  h.releaseJudge();                     // A's judge finally answers — stale now
+  await new Promise(resolve=>setTimeout(resolve,100));
+  assert.equal(h.sent.length,1,'the stale verdict is discarded, not double-delivered');
+  assert.ok(logs.some(args=>String(args[0]).includes('discarded as stale')),'the discard is logged, not silent');
+ }finally{console.log=original;h.cleanup()}
 });
 test('new parent turn invalidates the judge result',async()=>{
  const h=setup({verdict:'continue',stale:true});try{await h.fire();assert.equal(h.created.length,1);assert.equal(h.sent.length,0)}finally{h.cleanup()}
