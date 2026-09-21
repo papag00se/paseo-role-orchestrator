@@ -44,11 +44,23 @@ function setup({verdict='pass',overflow=false,stale=false,judgeMessages=null,liv
   await new Promise(resolve=>setTimeout(resolve,100));
  }};
 }
-for (const verdict of ['pass','blocked','continue']) test(`missing model-window metadata still judges; ${verdict} disposition`,async()=>{
+for (const verdict of ['pass','blocked','waiting','continue']) test(`missing model-window metadata still judges; ${verdict} disposition`,async()=>{
  const h=setup({verdict});try {
   await h.fire();assert.equal(h.created.length,1);assert.equal(h.archived.length,1);
   assert.equal(h.sent.length,verdict==='continue'?1:0);
  }finally{h.cleanup()}
+});
+// waiting/blocked send nothing to the agent, so the daemon log is the only place the
+// named in-flight processes / blockers can surface. A silent verdict must not be mute.
+for (const verdict of ['blocked','waiting']) test(`a silent ${verdict} verdict names its remaining tasks in the log`,async()=>{
+ const logs=[];const original=console.log;console.log=(...args)=>logs.push(args);
+ const h=setup({verdict});try{
+  await h.fire();
+  assert.equal(h.sent.length,0,'silent toward the agent');
+  const finished=logs.find(args=>args[0]==='Completion check finished');
+  assert.ok(finished,'finished log entry exists');
+  assert.deepEqual(finished[1].remainingTasks,['verify tests'],'log carries the named tasks');
+ }finally{console.log=original;h.cleanup()}
 });
 // A supervisor babysitting a delegated child ends many short turns (approving the child's
 // permissions, checking status). The in-memory child maps are lost on any plugin reload and never
@@ -107,6 +119,9 @@ test('judge prompt reserves blocked for a globally blocked ledger',async()=>{
   assert.match(h.created[0].prompt,/perform ITSELF right now/);
   assert.match(h.created[0].prompt,/already in progress/i);
   assert.match(h.created[0].prompt,/waiting on the owner or an external/i);
+  assert.match(h.created[0].prompt,/Return waiting when the remaining work is already in progress/);
+  assert.match(h.created[0].prompt,/Return blocked only when/);
+  assert.match(h.created[0].prompt,/Do not return blocked for work a running process is already performing/);
   assert.match(h.created[0].prompt,/paseo script ls/);
   assert.match(h.created[0].prompt,/Judge whether the recent strategy is converging/i);
   assert.match(h.created[0].prompt,/strategy-reset task/i);
