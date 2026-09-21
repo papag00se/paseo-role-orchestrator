@@ -18,6 +18,17 @@ test('preserves clarification chain and subsequent responses, excluding generate
  for (const text of ['Implement deletion','Retain receipts','yes','Tests passed','Remaining work fixed']) assert.ok(result.includes(text));
  for (const text of ['HUGE RAW','paseo-system','LEGACY WALL','plugin-internal','completion gate judged']) assert.ok(!result.includes(text));
 });
+test('coalesces streamed same-type deltas into one labeled block', () => {
+ const result = completionEvidence([
+  {type:'user_message',text:'Verify the quota logic'},
+  {type:'assistant_message',text:'daily-write '},
+  {type:'assistant_message',text:'quota '},
+  {type:'assistant_message',text:'(`7500`) prevents overuse'},
+ ]);
+ assert.equal((result.match(/ASSISTANT EVIDENCE \(claims to verify\):/g)||[]).length, 1);
+ assert.equal((result.match(/USER REQUEST \/ CLARIFICATION:/g)||[]).length, 1);
+ assert.ok(result.includes('daily-write quota (`7500`) prevents overuse'));
+});
 test('no identifiable user ask refuses to judge', () => {
  assert.throws(() => completionEvidence([{type:'assistant_message',text:'done'}]), /No identifiable/);
 });

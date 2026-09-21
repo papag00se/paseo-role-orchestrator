@@ -24,10 +24,10 @@ await writeFile(join(home,'plugin-data/role-orchestrator.json'), JSON.stringify(
 await saveCompletionGateSettings({provider:'test',model:'judge',thinkingOptionId:null,modeId:null,prompt:'Judge',context:'full'});
 after(()=>rm(home,{recursive:true,force:true}));
 
-function setup({verdict='pass',overflow=false,stale=false,judgeMessages=null}={}) {
+function setup({verdict='pass',overflow=false,stale=false,judgeMessages=null,liveDescendants=[],listThrows=false}={}) {
  const hooks=new Map(), created=[], sent=[], archived=[], gateSends=[];
  const agent={id:'parent',provider:'test',model:'model',cwd:home,workspaceId:'workspace',labels:{'paseo-role-orchestrator.role-id':roleId}};
- const paseo={providers:{listModels:async()=>({models:[{id:'judge'}]})},agents:{ref:()=>({refresh:async()=>({agent}),send:async text=>sent.push(text),run:()=>{throw Error('Supervisor must never summarize')}})},workspaces:{ref:()=>({agents:{create:async options=>{
+ const paseo={providers:{listModels:async()=>({models:[{id:'judge'}]})},agents:{list:async()=>{if(listThrows)throw new Error('daemon unreachable');return {entries:[{agent},...liveDescendants.map(a=>({agent:a}))]}},ref:()=>({refresh:async()=>({agent}),send:async text=>sent.push(text),run:()=>{throw Error('Supervisor must never summarize')}})},workspaces:{ref:()=>({agents:{create:async options=>{
   created.push(options);
   assert.equal(options.parent,undefined);
   assert.equal(options.config.provider,'test/judge');
@@ -50,6 +50,45 @@ for (const verdict of ['pass','blocked','continue']) test(`missing model-window 
   assert.equal(h.sent.length,verdict==='continue'?1:0);
  }finally{h.cleanup()}
 });
+// A supervisor babysitting a delegated child ends many short turns (approving the child's
+// permissions, checking status). The in-memory child maps are lost on any plugin reload and never
+// see children created before load, so the gate would nag "do not idle" on every such turn. Ground
+// truth from agents.list + the paseo.parent-agent-id label is authoritative regardless of reloads.
+test('an actively running descendant suppresses the gate even with no in-memory tracking',async()=>{
+ const h=setup({verdict:'continue',liveDescendants:[{id:'child',status:'running',labels:{'paseo.parent-agent-id':'parent'}}]});try{
+  await h.fire();
+  assert.equal(h.created.length,0,'no judge is launched while a descendant works');
+  assert.equal(h.sent.length,0,'the parent is not nagged');
+ }finally{h.cleanup()}
+});
+test('a descendant awaiting a permission decision suppresses the gate',async()=>{
+ const h=setup({verdict:'continue',liveDescendants:[{id:'child',status:'idle',pendingPermissions:[{id:'p'}],labels:{'paseo.parent-agent-id':'parent'}}]});try{
+  await h.fire();assert.equal(h.created.length,0);assert.equal(h.sent.length,0);
+ }finally{h.cleanup()}
+});
+test('a transitive grandchild still working suppresses the gate',async()=>{
+ const h=setup({verdict:'continue',liveDescendants:[
+  {id:'child',status:'idle',labels:{'paseo.parent-agent-id':'parent'}},
+  {id:'grandchild',status:'running',labels:{'paseo.parent-agent-id':'child'}},
+ ]});try{
+  await h.fire();assert.equal(h.created.length,0);
+ }finally{h.cleanup()}
+});
+test('an idle descendant does not suppress the gate',async()=>{
+ const h=setup({verdict:'continue',liveDescendants:[{id:'child',status:'idle',labels:{'paseo.parent-agent-id':'parent'}}]});try{
+  await h.fire();assert.equal(h.created.length,1);assert.equal(h.sent.length,1);
+ }finally{h.cleanup()}
+});
+test('an archived descendant does not suppress the gate',async()=>{
+ const h=setup({verdict:'continue',liveDescendants:[{id:'child',status:'running',archivedAt:'now',labels:{'paseo.parent-agent-id':'parent'}}]});try{
+  await h.fire();assert.equal(h.created.length,1);
+ }finally{h.cleanup()}
+});
+test('an unverifiable descendant tree fails safe and suppresses the gate',async()=>{
+ const h=setup({verdict:'continue',listThrows:true});try{
+  await h.fire();assert.equal(h.created.length,0,'a tree we cannot verify is never nagged or passed');
+ }finally{h.cleanup()}
+});
 test('context overflow creates isolated summaries and retries the judge',async()=>{
  const h=setup({overflow:true});try{
   await h.fire();assert.equal(h.created[0].title,'Completion gate');
@@ -65,8 +104,10 @@ test('judge prompt reserves blocked for a globally blocked ledger',async()=>{
  const h=setup({verdict:'blocked'});try{
   await h.fire();
   assert.match(h.created[0].prompt,/inspect every incomplete requirement/i);
-  assert.match(h.created[0].prompt,/blocked item does not block the whole request/i);
-  assert.match(h.created[0].prompt,/Return blocked only when every incomplete requirement/i);
+  assert.match(h.created[0].prompt,/perform ITSELF right now/);
+  assert.match(h.created[0].prompt,/already in progress/i);
+  assert.match(h.created[0].prompt,/waiting on the owner or an external/i);
+  assert.match(h.created[0].prompt,/paseo script ls/);
   assert.match(h.created[0].prompt,/Judge whether the recent strategy is converging/i);
   assert.match(h.created[0].prompt,/strategy-reset task/i);
  }finally{h.cleanup()}
@@ -116,7 +157,7 @@ function wakeSetup() {
  const parent={id:'parent',workspaceId:'ws',cwd:home,labels:{'paseo-role-orchestrator.role-id':roleId}};
  const child={id:'child',parentAgentId:'parent',workspaceId:'ws',cwd:home,labels:{'paseo-role-orchestrator.role-id':childRoleId}};
  const byId={parent,child};
- const paseo={providers:{listModels:async()=>({models:[{id:'judge'}]})},agents:{ref:id=>({refresh:async()=>({agent:byId[id]}),send:async t=>sent.push({id,t})})},workspaces:{ref:()=>({agents:{create:async o=>{created.push(o);return{archive:async()=>{},waitForFinish:async()=>({status:'idle',lastMessage:'{"verdict":"continue","remainingTasks":["x"]}'})}}}})}};
+ const paseo={providers:{listModels:async()=>({models:[{id:'judge'}]})},agents:{list:async()=>({entries:Object.values(byId).map(agent=>({agent}))}),ref:id=>({refresh:async()=>({agent:byId[id]}),send:async t=>sent.push({id,t})})},workspaces:{ref:()=>({agents:{create:async o=>{created.push(o);return{archive:async()=>{},waitForFinish:async()=>({status:'idle',lastMessage:'{"verdict":"continue","remainingTasks":["x"]}'})}}}})}};
  const cleanup=installCompletionGate({on:(name,fn)=>{hooks.set(name,fn);return ()=>hooks.delete(name)}});
  const childEnded=()=>hooks.get('agent.turn_ended')({agent:{id:'child',parentAgentId:'parent',workspaceId:'ws'},outcome:{kind:'completed'},timeline:[]},{paseo});
  return {hooks,sent,created,cleanup,childEnded,

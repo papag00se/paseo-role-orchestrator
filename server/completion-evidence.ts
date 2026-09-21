@@ -9,9 +9,18 @@ export function generatedMessage(text: string): boolean {
 }
 
 export function completionEvidence(items: readonly Item[]): string {
+  // Paseo's turn_ended timeline can deliver one logical message as many
+  // streamed deltas (one Item per chunk). Coalesce consecutive same-type text
+  // items so each turn yields a single labeled block, not one header per chunk.
+  const merged: Item[] = [];
+  for (const item of items) {
+    const last = merged[merged.length - 1];
+    if (last && last.type === item.type && typeof last.text === "string" && typeof item.text === "string") last.text += item.text;
+    else merged.push({ type: item.type, text: item.text });
+  }
   const exchanges: string[] = [];
   let suppressAssistant = false;
-  for (const item of items) {
+  for (const item of merged) {
     if (item.type === "user_message" && item.text) {
       suppressAssistant = item.text.startsWith("This is a plugin-internal context-preparation turn");
       if (!generatedMessage(item.text)) exchanges.push(`USER REQUEST / CLARIFICATION:\n${item.text}`);
