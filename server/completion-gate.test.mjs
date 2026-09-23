@@ -169,6 +169,9 @@ test('judge prompt reserves blocked for a globally blocked ledger',async()=>{
   assert.match(h.created[0].prompt,/paseo script ls/);
   assert.match(h.created[0].prompt,/Judge whether the recent strategy is converging/i);
   assert.match(h.created[0].prompt,/strategy-reset task/i);
+  assert.match(h.created[0].prompt,/pauses only that rerun pattern/i);
+  assert.match(h.created[0].prompt,/keeps the root request active/i);
+  assert.match(h.created[0].prompt,/not a terminal conclusion/i);
  }finally{h.cleanup()}
 });
 test('failed parent turns do not launch judges',async()=>{
