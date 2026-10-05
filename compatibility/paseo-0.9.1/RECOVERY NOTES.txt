@@ -1,0 +1,5 @@
+Recovered for Paseo 0.9.1. Original source is preserved beside this directory.
+Four role definitions reconstructed locally from historical labeled runs.
+Creation dates inferred; original completion-gate toggle and inherited-context settings unavailable.
+Completion lifecycle hooks are intentionally unregistered in this recovery variant: no automatic judge, wake, or summary agents. Manual role launch UI is retained.
+Verified SDK dependency directory shared with recovered Chrome Bridge plugin; no npm install scripts executed.

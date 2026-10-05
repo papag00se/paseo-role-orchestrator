@@ -1,0 +1,13 @@
+{
+  "id": "paseo-role-orchestrator",
+  "requirements": {
+    "paseo": ">=0.9.1 <0.10.0"
+  },
+  "build": [
+    [
+      "npm",
+      "ci",
+      "--legacy-peer-deps"
+    ]
+  ]
+}
