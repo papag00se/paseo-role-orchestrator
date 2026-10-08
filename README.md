@@ -50,6 +50,10 @@ paseo plugin install "$PWD"
 
 Open **Settings → Plugins → Role Orchestrator → Roles and delegation**, create your roles, then launch them from the workspace **Roles** panel. Each role runs as a normal Paseo agent using its configured provider.
 
+![Role Orchestrator roles settings in Paseo: Coder, Reviewer, General Purpose and Supervisor roles with their models and delegation limits](docs/media/settings-roles.png)
+
+![Role Orchestrator completion gate settings in Paseo: judge provider, model, reasoning level and gate prompt](docs/media/settings-completion-gate.png)
+
 ## Compatibility
 
 | Variant | Contract |
