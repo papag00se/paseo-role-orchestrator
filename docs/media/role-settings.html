@@ -1,0 +1,81 @@
+<!doctype html>
+<!-- Source for role-settings.png. Render: node docs/media/render-role-settings.mjs -->
+<html><head><meta charset="utf-8"><style>
+  * { box-sizing: border-box; margin: 0; }
+  html { background: #0d1117; }
+  body { width: 1600px; height: 800px; background: radial-gradient(1200px 700px at 15% 0%, #1b1838 0%, #0d1117 60%); color: #e6edf3;
+         font: 17px/1.4 "Inter", "Segoe UI", system-ui, sans-serif; padding: 44px 52px; }
+  h1 { font-size: 34px; font-weight: 800; letter-spacing: -0.5px; }
+  h1 small { display: block; font-size: 18px; font-weight: 500; color: #8b949e; margin-top: 6px; letter-spacing: 0; }
+  .grid { display: grid; grid-template-columns: 1fr 1.25fr 0.78fr; gap: 28px; margin-top: 30px; }
+  .col h2 { font-size: 15px; text-transform: uppercase; letter-spacing: 1.6px; color: #a78bfa; margin-bottom: 14px; }
+  .card { background: rgba(22, 27, 34, 0.92); border: 1px solid #30363d; border-radius: 16px; padding: 18px 20px; }
+  .part { display: grid; grid-template-columns: 46px 1fr; gap: 4px 12px; padding: 14px 0; border-top: 1px solid #21262d; }
+  .part:first-child { border-top: 0; padding-top: 2px; }
+  .emoji { font-size: 30px; grid-row: span 2; line-height: 1.1; }
+  .name { font-weight: 700; font-size: 18px; }
+  .what { color: #9da7b3; font-size: 15.5px; }
+  .tree { position: relative; height: 560px; }
+  .node { position: absolute; background: #161b22; border: 1px solid #30363d; border-radius: 14px; padding: 12px 13px; width: 186px; }
+  .node.root { left: 50%; transform: translateX(-50%); top: 0; width: 330px; border: 2px solid #a78bfa; box-shadow: 0 0 40px rgba(167, 139, 250, 0.25); }
+  .node .title { font-weight: 800; font-size: 16.5px; white-space: nowrap; }
+  .node .model { color: #8b949e; font-size: 14px; margin: 2px 0 8px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { font-size: 13px; padding: 3px 9px; border-radius: 999px; background: #21262d; color: #c9d1d9; white-space: nowrap; }
+  .chip.on { background: rgba(34, 197, 94, 0.16); color: #4ade80; }
+  .chip.ctx { background: rgba(34, 211, 238, 0.14); color: #67e8f9; }
+  .chip.no { background: rgba(248, 81, 73, 0.12); color: #ff9b94; }
+  .tool { position: absolute; left: 50%; transform: translateX(-50%); top: 176px; font: 600 14px "JetBrains Mono", monospace; color: #c4b5fd;
+          background: #1f1a3a; border: 1px solid #4c3f8f; padding: 5px 12px; border-radius: 8px; white-space: nowrap; }
+  svg.lines { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+  .ctx-card { margin-bottom: 14px; padding: 16px 18px; }
+  .ctx-card .name { display: flex; gap: 10px; align-items: center; }
+  .ctx-card .name span { font-size: 26px; }
+  .ctx-card .what { margin-top: 6px; }
+  .gate { margin-top: 4px; padding: 16px 18px; border-color: rgba(34, 197, 94, 0.45); background: rgba(34, 197, 94, 0.06); }
+  .note { position: absolute; top: 470px; left: 0; right: 0; text-align: center; color: #9da7b3; font-size: 15px; }
+  code { font: 600 14.5px "JetBrains Mono", monospace; color: #c4b5fd; }
+</style></head><body>
+  <h1>🧭 How role settings work together<small>Define a role once. Every launch gets the same agent, prompt and delegation rules.</small></h1>
+  <div class="grid">
+    <div class="col">
+      <h2>🧩 Anatomy of a role</h2>
+      <div class="card">
+        <div class="part"><div class="emoji">🏷️</div><div class="name">Name &amp; delegation description</div><div class="what">What a parent reads when it picks a child. It's never added to the role's own prompt.</div></div>
+        <div class="part"><div class="emoji">🧠</div><div class="name">Provider · model · reasoning · mode</div><div class="what">The Paseo agent that actually runs whenever this role launches.</div></div>
+        <div class="part"><div class="emoji">📜</div><div class="name">System / role prompt</div><div class="what">Standing instructions carried into every launch.</div></div>
+        <div class="part"><div class="emoji">✅</div><div class="name">Completion gate</div><div class="what">An independent judge checks each finished turn against the workspace.</div></div>
+        <div class="part"><div class="emoji">🤝</div><div class="name">Delegation</div><div class="what">Which roles it may launch, and how much of its session each child sees.</div></div>
+      </div>
+    </div>
+    <div class="col">
+      <h2>🌳 What a launch looks like</h2>
+      <div class="tree">
+        <svg class="lines">
+          <defs><marker id="a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#7c6bd6"/></marker></defs>
+          <path d="M297 107 V 176" stroke="#7c6bd6" stroke-width="2.5" fill="none"/>
+          <path d="M297 208 V 226 H 93 V 262" stroke="#7c6bd6" stroke-width="2.5" fill="none" marker-end="url(#a)"/>
+          <path d="M297 208 V 262" stroke="#7c6bd6" stroke-width="2.5" fill="none" marker-end="url(#a)"/>
+          <path d="M297 208 V 226 H 501 V 262" stroke="#7c6bd6" stroke-width="2.5" fill="none" marker-end="url(#a)"/>
+        </svg>
+        <div class="node root"><div class="title">🧑‍✈️ Supervisor</div><div class="model">pi · GPT-6.1 Sol · high</div>
+          <div class="chips"><span class="chip on">✅ gate on</span><span class="chip on">🤝 may launch 3 roles</span></div></div>
+        <div class="tool">launch_role · list_roles</div>
+        <div class="node" style="left:0px; top:268px"><div class="title">🛠️ Coder</div><div class="model">GPT-6.1 Sol · medium</div>
+          <div class="chips"><span class="chip ctx">🧹 no parent context</span><span class="chip no">🚫 can't delegate</span></div></div>
+        <div class="node" style="left:204px; top:268px"><div class="title">🔍 Reviewer</div><div class="model">GPT-6.1 Sol · medium</div>
+          <div class="chips"><span class="chip ctx">🧹 no parent context</span><span class="chip no">🚫 can't delegate</span></div></div>
+        <div class="node" style="left:408px; top:268px"><div class="title">🧰 General Purpose</div><div class="model">GPT-6.1 Sol · medium</div>
+          <div class="chips"><span class="chip ctx">🧹 no parent context</span><span class="chip no">🚫 can't delegate</span></div></div>
+        <div class="note">👀 Children are normal Paseo agents, nested under their parent in the workspace.<br>The role tools only offer the children a parent is allowed to launch.</div>
+      </div>
+    </div>
+    <div class="col">
+      <h2>📦 Child context</h2>
+      <div class="card ctx-card"><div class="name"><span>🧹</span>No parent context</div><div class="what">Just the task prompt and the shared workspace.</div></div>
+      <div class="card ctx-card"><div class="name"><span>📚</span>Complete session</div><div class="what">The parent's full, unedited timeline is attached.</div></div>
+      <div class="card ctx-card"><div class="name"><span>📝</span>Session summary</div><div class="what">A temporary agent on the parent's model summarizes the session first.</div></div>
+      <div class="card gate"><div class="name">⚖️ One gate setup</div><div class="what">The completion gate's provider, model, reasoning and prompt are set once and shared by every role that turns it on.</div></div>
+    </div>
+  </div>
+</body></html>

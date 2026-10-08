@@ -493,13 +493,12 @@ function CompletionGateSettingsCard({ hostId, theme, styles }: { hostId: string;
     } catch (error) { toast.error(error instanceof Error ? error.message : "Unable to save completion gate settings"); }
   };
   return <View style={styles.card}>
-    <Text style={styles.name}>Completion gate settings</Text>
+    <View style={styles.header}><Text style={[styles.name, styles.grow]}>Completion gate settings</Text><Button label="Save completion gate" kind="primary" onPress={() => void saveDraft()} theme={theme} styles={styles} icon="Save" /></View>
     <Text style={styles.detail}>The gate checks user requests, clarification exchanges, and assistant responses against workspace evidence. Oversized evidence is summarized separately using the judge model; the Supervisor is never asked to summarize.</Text>
     <Picker label="Provider" value={draft.provider || null} options={providerOptions} placeholder="Choose a provider" emptyMessage="No ready providers are available." theme={theme} styles={styles} onSelect={(providerId) => setDraft({ ...draft, provider: providerId ?? "", model: "", thinkingOptionId: null })} />
     <Picker label="Model" value={draft.model || null} options={modelOptions} placeholder={draft.provider ? "Choose a model" : "Choose a provider first"} emptyMessage="No selectable models are available." theme={theme} styles={styles} onSelect={(modelId) => { const model = models.find((candidate) => candidate.id === modelId); setDraft({ ...draft, model: modelId ?? "", thinkingOptionId: model?.defaultThinkingOptionId ?? null }); }} />
     <Picker label="Reasoning level" value={draft.thinkingOptionId} options={thinkingOptions} placeholder="Use provider default" emptyMessage="This model does not expose reasoning levels." theme={theme} styles={styles} onSelect={(thinkingOptionId) => setDraft({ ...draft, thinkingOptionId })} />
     <View><Text style={styles.label}>Gate prompt</Text><TextInput value={draft.prompt} onChangeText={(prompt) => setDraft({ ...draft, prompt })} multiline textAlignVertical="top" style={[styles.input, { minHeight: 160 }]} /></View>
-    <View style={[styles.row, { justifyContent: "flex-end" }]}><Button label="Save completion gate" kind="primary" onPress={() => void saveDraft()} theme={theme} styles={styles} icon="Save" /></View>
   </View>;
 }
 

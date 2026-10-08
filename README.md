@@ -12,29 +12,25 @@
 
 </div>
 
-Define specialist agent roles once, then launch and delegate through them inside Paseo. Each role carries its own model settings, operating prompt, and child-delegation policy while keeping real parent/child relationships in the workspace.
+🧑‍✈️ Build your own agent team. Define a **Coder**, a **Reviewer** and a **Supervisor** once, each with its own model, reasoning level and standing instructions. Then launch them from any workspace.
+
+🤝 Roles can delegate to other roles, but only the ones you allow, and you choose how much of the parent's session each child sees. 🌳 Every child is a normal Paseo agent nested under its parent, so you can watch the whole tree work.
 
 ## Features
 
 | Feature | What you get |
 | --- | --- |
-| Reusable roles | A daemon-local catalog with prompts, descriptions, and provider/model settings |
-| Controlled delegation | Allowed-child-role lists and per-child context policies |
-| Native launch panels | Workspace Roles and agent Child roles panels |
-| Role-aware tools | `list_roles` and `launch_role` are scoped to plugin-launched agents |
-| Visible hierarchy | Follow root roles, children, and helper agents in the normal workspace |
-| Completion controls | Root implementation includes optional completion checks and evidence handling |
+| 🧩 Reusable roles | Name, prompt, provider, model, reasoning level and mode, saved once |
+| 🤝 Controlled delegation | Each role lists exactly which roles it may launch |
+| 📦 Context per child | No parent context, the full session, or a summary |
+| 🚀 Native launch panels | A **Roles** panel per workspace and a **Child roles** panel per agent |
+| 🛠️ Role-aware tools | `list_roles` and `launch_role` only offer what the caller is allowed |
+| 🌳 Visible hierarchy | Parents, children and helper agents show up in the normal workspace |
+| ✅ Completion gate | An independent judge model checks finished turns (original plugin) |
 
 ## How it fits
 
-```mermaid
-flowchart TD
-    A[Role catalog] --> B[Root role in a workspace]
-    B --> C[Allowed child role]
-    B --> D[Another allowed child role]
-    C --> E[No context, full timeline, or summary]
-    D --> F[Configured provider and operating prompt]
-```
+![How role settings work together: the parts of a role, a Supervisor launching Coder, Reviewer and General Purpose children, and the three child context options](docs/media/role-settings.png)
 
 ## Getting started
 
@@ -50,7 +46,9 @@ paseo plugin install "$PWD"
 
 Open **Settings → Plugins → Role Orchestrator → Roles and delegation**, create your roles, then launch them from the workspace **Roles** panel. Each role runs as a normal Paseo agent using its configured provider.
 
-![Role Orchestrator roles settings in Paseo: Coder, Reviewer, General Purpose and Supervisor roles with their models and delegation limits](docs/media/settings-roles.png)
+<p align="center"><img src="docs/media/role-setup.png" width="520" alt="Editing the Supervisor role in Paseo: name, delegation description, provider, model, reasoning level, mode, role prompt, completion gate, and allowed child roles with their context"></p>
+
+**Completion gate** settings set the judge's provider, model, reasoning level and prompt once for every role that enables the gate.
 
 ![Role Orchestrator completion gate settings in Paseo: judge provider, model, reasoning level and gate prompt](docs/media/settings-completion-gate.png)
 
