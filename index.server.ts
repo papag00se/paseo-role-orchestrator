@@ -1,5 +1,5 @@
 import type { PluginServerContext } from "@getpaseo/plugin/server";
-import { getCompletionGateSettings, installCompletionGate, saveCompletionGateSettings } from "./server/completion-gate";
+import { getCompletionGateSettings, saveCompletionGateSettings } from "./server/completion-gate";
 import { addRole, editRole, getRoles, removeRole } from "./server/roles";
 import { installRoleTools } from "./server/role-tools";
 import { createRole, deleteRole, getCompletionGateSettings as getCompletionGateSettingsRpc, launchRoleRpc, listRoles, saveCompletionGateSettings as saveCompletionGateSettingsRpc, updateRole } from "./shared/roles";
@@ -19,9 +19,8 @@ export default function contribute(server: PluginServerContext) {
     return { agentId: result.agentId, roleId: result.role.id, roleName: result.role.name };
   });
 
-  const removeCompletionGate = installCompletionGate(server);
+  // Recovery mode: no automatic completion-judge agents are started.
   return () => {
-    removeCompletionGate();
     void tools.then((runtime) => runtime.close()).catch(() => undefined);
   };
 }

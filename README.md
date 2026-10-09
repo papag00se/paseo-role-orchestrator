@@ -4,7 +4,7 @@
 
 # Paseo Role Orchestrator
 
-![Paseo compatibility](https://img.shields.io/badge/Paseo-0.9.1%20snapshot-22c55e?style=flat-square)
+![Paseo compatibility](https://img.shields.io/badge/Paseo-0.9.1%E2%80%930.9.x-22c55e?style=flat-square)
 ![TypeScript](https://img.shields.io/badge/TypeScript-3178c6?style=flat-square&logo=typescript&logoColor=white)
 ![Platform](https://img.shields.io/badge/Platform-Desktop,%20web%20%26%20mobile-64748b?style=flat-square)
 
@@ -34,11 +34,11 @@
 
 ## Getting started
 
-Use the preserved compatibility snapshot for Paseo 0.9.1:
+Requires Paseo 0.9.1–0.9.x:
 
 ```bash
 git clone https://github.com/papag00se/paseo-role-orchestrator.git
-cd paseo-role-orchestrator/compatibility/paseo-0.9.1
+cd paseo-role-orchestrator
 npm ci --legacy-peer-deps
 npm run typecheck
 paseo plugin install "$PWD"
@@ -54,12 +54,7 @@ Open **Settings → Plugins → Role Orchestrator → Roles and delegation**, cr
 
 ## Compatibility
 
-| Variant | Contract |
-| --- | --- |
-| Repository root | Original Paseo 0.8+ implementation with automatic completion hooks |
-| `compatibility/paseo-0.9.1` | Recovered Paseo 0.9.1–0.9.x variant with native settings and manual role launching |
-
-**Automatic completion hooks are intentionally unregistered in the recovery snapshot.** Completion settings and related code remain preserved, but this variant does not start automatic judge, wake, or summary agents. The original implementation remains available at the root.
+Targets Paseo **0.9.1–0.9.x**. **Automatic completion hooks are not registered in this version:** completion settings and code are kept, but no automatic judge, wake or summary agents start. The earlier Paseo 0.8 implementation with automatic hooks is in Git history.
 
 Provider-native `create_agent` remains outside the role policy: the plugin cannot enforce a per-agent ban through Paseo's provider-wide tool settings. See the reference for the exact delegation boundary.
 
@@ -70,6 +65,4 @@ npm run typecheck
 npm test
 ```
 
-Run these from the variant you are editing. The compatibility snapshot is an independent plugin directory and shares the original runtime ID.
-
-[Role settings, delegation, completion evidence, and known limits →](docs/REFERENCE.md) · [0.9.1 snapshot](compatibility/paseo-0.9.1)
+[Role settings, delegation, completion evidence, and known limits →](docs/REFERENCE.md)

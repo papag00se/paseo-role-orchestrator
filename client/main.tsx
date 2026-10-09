@@ -476,7 +476,9 @@ function CompletionGateSettingsCard({ hostId, theme, styles }: { hostId: string;
   const catalog = useProviderCatalog();
   const [draft, setDraft] = useState<CompletionGateSettings | null>(null);
   useEffect(() => { if (settingsQuery.data) setDraft(settingsQuery.data); }, [settingsQuery.data]);
-  if (!draft) return null;
+  if (!draft) return settingsQuery.isError
+    ? <Text accessibilityRole="alert" style={styles.dangerText}>Could not load completion gate settings: {settingsQuery.error.message}</Text>
+    : <ActivityIndicator color={theme.colors.accent} />;
   const providers = (catalog.data ?? []).filter((entry) => entry.enabled && (entry.status === "ready" || entry.provider === draft.provider));
   const provider = providers.find((entry) => entry.provider === draft.provider);
   const models = (provider?.models ?? []).filter((model) => model.isSelectable !== false);
@@ -500,24 +502,27 @@ function CompletionGateSettingsCard({ hostId, theme, styles }: { hostId: string;
   </View>;
 }
 
+export function CompletionGateSettingsPage({ theme, host, layout }: PluginSurfaceProps) {
+  const styles = useMemo(() => stylesFor(theme, layout.compact), [layout.compact, theme]);
+  return <View style={styles.content}><CompletionGateSettingsCard hostId={host.id} theme={theme} styles={styles} /></View>;
+}
+
 export function RoleCatalogSurface({ theme, host, layout }: PluginSurfaceProps) {
   const styles = useMemo(() => stylesFor(theme, layout.compact), [layout.compact, theme]);
   const rolesQuery = useRoles(host.id);
   const completionGate = useCompletionGateSettings(host.id);
   const mutations = useRoleMutations(host.id);
   const [editing, setEditing] = useState<Role | "new" | null>(null);
-  const [completionGateSettingsOpen, setCompletionGateSettingsOpen] = useState(false);
   const roles = rolesQuery.data ?? [];
   return (
-    <View style={styles.screen}>
-      <ScrollView contentContainerStyle={styles.content}>
+    <View>
+      <View style={styles.content}>
         <View style={styles.header}>
           <View style={styles.grow}>
             <Text style={styles.title}>Roles</Text>
             <Text style={styles.subtitle}>Reusable agent configurations and delegation policies.</Text>
           </View>
           <View style={styles.row}>
-            <Button label="Settings" onPress={() => setCompletionGateSettingsOpen(true)} theme={theme} styles={styles} icon="Settings" />
             <Button label="New role" onPress={() => setEditing("new")} kind="primary" theme={theme} styles={styles} icon="Plus" />
           </View>
         </View>
@@ -525,12 +530,7 @@ export function RoleCatalogSurface({ theme, host, layout }: PluginSurfaceProps) 
         {rolesQuery.isError ? <Text style={styles.dangerText}>Could not load roles.</Text> : null}
         {roles.map((role) => <RoleCard key={role.id} role={role} theme={theme} styles={styles} onEdit={() => setEditing(role)} onDelete={() => mutations.mutate({ kind: "delete", id: role.id })} />)}
         {!rolesQuery.isLoading && roles.length === 0 ? <View style={styles.card}><Text style={styles.empty}>Create roles here, then open the Roles workspace panel to launch them.</Text></View> : null}
-      </ScrollView>
-      <Modal title="Completion gate settings" open={completionGateSettingsOpen} onOpenChange={setCompletionGateSettingsOpen}>
-        <Modal.Content>
-          <CompletionGateSettingsCard hostId={host.id} theme={theme} styles={styles} />
-        </Modal.Content>
-      </Modal>
+      </View>
       <RoleEditor
         open={editing !== null}
         role={editing === "new" ? null : editing}
