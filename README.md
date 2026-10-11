@@ -54,7 +54,7 @@ Open **Settings → Plugins → Role Orchestrator → Roles and delegation**, cr
 
 ## Compatibility
 
-Targets Paseo **0.9.1–0.9.x**. **Automatic completion hooks are not registered in this version:** completion settings and code are kept, but no automatic judge, wake or summary agents start. The earlier Paseo 0.8 implementation with automatic hooks is in Git history.
+Targets Paseo **0.9.1–0.9.x**. The automatic completion gate is registered through the Paseo 0.9.1 lifecycle hooks (`server.on`): a gate-enabled role that ends a turn with unfinished work is sent back to continue. The earlier Paseo 0.8 implementation is in Git history.
 
 Provider-native `create_agent` remains outside the role policy: the plugin cannot enforce a per-agent ban through Paseo's provider-wide tool settings. See the reference for the exact delegation boundary.
 

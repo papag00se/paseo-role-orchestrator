@@ -189,7 +189,7 @@ function verdict(text: string): Verdict {
   throw new Error("Completion gate returned no valid verdict JSON");
 }
 
-/** Plugin-only completion enforcement through the public v0.8 lifecycle API. */
+/** Plugin-only completion enforcement through the public lifecycle hooks (Paseo 0.9.1 `server.on`). */
 export function installCompletionGate(server: PluginServerContext): () => void {
   const waking = new Set<string>();
   const ownAgentIds = new Set<string>();

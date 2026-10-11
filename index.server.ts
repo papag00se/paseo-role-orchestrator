@@ -1,5 +1,5 @@
 import type { PluginServerContext } from "@getpaseo/plugin/server";
-import { getCompletionGateSettings, saveCompletionGateSettings } from "./server/completion-gate";
+import { getCompletionGateSettings, installCompletionGate, saveCompletionGateSettings } from "./server/completion-gate";
 import { addRole, editRole, getRoles, removeRole } from "./server/roles";
 import { installRoleTools } from "./server/role-tools";
 import { createRole, deleteRole, getCompletionGateSettings as getCompletionGateSettingsRpc, launchRoleRpc, listRoles, saveCompletionGateSettings as saveCompletionGateSettingsRpc, updateRole } from "./shared/roles";
@@ -19,8 +19,11 @@ export default function contribute(server: PluginServerContext) {
     return { agentId: result.agentId, roleId: result.role.id, roleName: result.role.name };
   });
 
-  // Recovery mode: no automatic completion-judge agents are started.
+  // The completion gate judges every finished turn of a gate-enabled role; a yielded or
+  // progress-only turn is sent back to work instead of being accepted as completion.
+  const removeCompletionGate = installCompletionGate(server);
   return () => {
+    removeCompletionGate();
     void tools.then((runtime) => runtime.close()).catch(() => undefined);
   };
 }
