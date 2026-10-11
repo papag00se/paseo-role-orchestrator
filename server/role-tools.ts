@@ -146,6 +146,8 @@ export function describeRole(role: Role, parent: Role, roles: readonly Role[]) {
 
 export interface RoleToolsRuntime {
   /** Launch a role, attaching delegation tools to the child when that role may delegate. */
+  /** Remember the daemon API so agent-called tools work after a plugin reload. */
+  connect(paseo: PaseoApi): void;
   launch(paseo: PaseoApi, request: LaunchRequest): ReturnType<typeof launchRole>;
   port(): number | null;
   close(): Promise<void>;
@@ -396,6 +398,9 @@ export async function installRoleTools(): Promise<RoleToolsRuntime> {
   console.log(`Role delegation tools listening on 127.0.0.1:${state.port}`);
 
   return {
+    connect: (paseo) => {
+      paseoApi = paseo;
+    },
     launch: (paseo, request) => {
       paseoApi = paseo;
       return launch(paseo, request);
