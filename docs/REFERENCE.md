@@ -1,6 +1,18 @@
 # Paseo Role Orchestrator
 
-A trusted local Paseo plugin for reusable, provider-neutral agent roles.
+A trusted local Paseo plugin for reusable, provider-neutral agent roles. Requires Paseo 0.11.2–0.11.x on both the daemon and connected app.
+
+## Paseo 0.11.2 compatibility
+
+- `@getpaseo/plugin`, `@getpaseo/client`, and `@getpaseo/protocol` development dependencies are pinned to 0.11.2. The manifest excludes older runtimes and the next minor release pending validation.
+- The client uses supported settings screens, contextual workspace panels, and a global Command Center action. There are no legacy `addSurface`, `addSidebarItem`, or composer registrations to migrate. `PluginSurfaceProps` remains the documented settings-screen contract in 0.11.2.
+- Modal forms use host-provided `TextInput` for native sheet keyboard handling and a single scroll owner (`Modal.Content`). Panel lists use the host-provided `ScrollView`.
+- Role catalog, gate settings, failure evidence, and delegation credentials retain their existing storage paths and formats. No settings migration or reset is performed.
+- Reload only this installation with `paseo plugin reload paseo-role-orchestrator`; do not remove it or restart the daemon.
+
+Validation on 0.11.2: typecheck and all 63 tests passed. Live reload reported `running` with no current load error, and logs recorded `Plugin ready`. Read-only RPC checks returned all four existing roles and configured gate settings; an invalid role launch was correctly rejected without creating an agent. Client contract tests exercise settings navigation and wide/compact role-editor rendering with host primitives, but are not a real-device visual test. Completion tests use mocked providers; no live judge model turn was started during migration.
+
+`npm audit` reports 22 development-tree advisories (5 moderate, 16 high, 1 critical), mainly in the pinned React Native tooling. These dependencies are not shipped as plugin runtime modules: Paseo supplies the UI runtime. Upgrading the host UI stack is outside this plugin migration.
 
 ## Included
 
@@ -17,7 +29,7 @@ A trusted local Paseo plugin for reusable, provider-neutral agent roles.
 - Oversized evidence is summarized in successive chunks using the configured judge model in separate, unparented Paseo sessions, archived afterward. No summary prompts go to the Supervisor. These are isolated harness sessions, not direct vendor API calls; tool restrictions are prompt instructions, not a sandbox. Summaries preserve requirements, evidence, unresolved work, contradictions, and uncertainty.
 - Budgeting uses conservative UTF-8 byte estimates and reserves half the advertised model window for runtime instructions, tools, and output. When model-window metadata is missing, the judge first receives selected evidence unchanged; actual provider context errors trigger hierarchical summarization with progressively smaller chunk budgets, never truncation. Exact runtime token usage is not exposed by the plugin SDK. Evidence budgeting is fully automatic; there is no gate-context setting to choose.
 
-Run extraction, summarization, and lifecycle integration tests with `node --test server/*.test.mjs` on Node with TypeScript stripping and `registerHooks` support (Node 22.18+). Integration tests cover missing model-window metadata, all verdict dispositions, overflow recovery, stale results, failed parent turns, prose-wrapped verdict extraction, the constrained malformed-verdict retry, and the fail-closed continuation with preserved raw judge output. Provider responses are mocked; these tests do not replace a live model smoke test.
+Run client compatibility, extraction, summarization, and lifecycle integration tests with `npm test` on Node with TypeScript stripping and `registerHooks` support (Node 22.18+). Integration tests cover missing model-window metadata, all verdict dispositions, overflow recovery, stale results, failed parent turns, prose-wrapped verdict extraction, the constrained malformed-verdict retry, and the fail-closed continuation with preserved raw judge output. Provider responses are mocked; these tests do not replace a live model smoke test.
 
 The task text entered when launching an agent is separate from the role's persistent system prompt. Full-context delegation attaches every canonical timeline entry without truncation; if that exceeds the child model's context window, the provider error is preserved. Summary delegation creates and archives a temporary child agent configured with the parent's current provider/model/reasoning/mode, then attaches its returned summary.
 
@@ -45,10 +57,10 @@ npm run typecheck
 Install from GitHub:
 
 ```bash
-paseo plugin add papag00se/paseo-role-orchestrator
+paseo plugin add git:papag00se/paseo-role-orchestrator
 ```
 
-Paseo runs the manifest build step (`npm ci`) when installing from GitHub, so the development dependencies needed to bundle the plugin are installed automatically.
+Paseo runs the manifest preparation step (`npm ci --legacy-peer-deps`) when installing from GitHub. The development dependencies support local typechecking and tests; Paseo supplies the matching SDK and UI modules at runtime.
 
 For a local checkout:
 

@@ -7,11 +7,11 @@ import {
   useRpc,
   useWorkspace,
 } from "@getpaseo/plugin/client";
-import { Icon, Modal, useToast } from "@getpaseo/plugin/client/react-native";
+import { Icon, Modal, ScrollView, TextInput, useToast } from "@getpaseo/plugin/client/react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { PaseoProviderSnapshotResult } from "@getpaseo/client";
 import { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { buildRoleRunTree, COMPLETION_AGENT_LABEL, fetchRoleAgents, PARENT_AGENT_LABEL, type RoleRunAgent } from "../shared/role-runs";
 import {
   createRole,
@@ -333,8 +333,7 @@ function RoleEditor({
   };
   return (
     <Modal title={role ? "Edit role" : "New role"} open={open} onOpenChange={onOpenChange}>
-      <Modal.Content>
-        <ScrollView contentContainerStyle={{ gap: 13, paddingBottom: 8 }}>
+      <Modal.Content contentContainerStyle={{ gap: 13, paddingBottom: 8 }}>
           <View>
             <Text style={styles.label}>Name</Text>
             <TextInput value={draft.name} onChangeText={(name) => update({ name })} placeholder="Architect" placeholderTextColor={theme.colors.foregroundMuted} style={styles.input} />
@@ -444,7 +443,6 @@ function RoleEditor({
             <Button label="Cancel" onPress={() => onOpenChange(false)} theme={theme} styles={styles} />
             <Button label={role ? "Save role" : "Create role"} kind="primary" onPress={() => onSave(draft)} theme={theme} styles={styles} icon="Save" />
           </View>
-        </ScrollView>
       </Modal.Content>
     </Modal>
   );
@@ -605,8 +603,7 @@ function RoleLauncher({
     <>
       <Button label={parentAgentId ? "Launch child role" : "Launch role"} onPress={() => setOpen(true)} kind="primary" theme={theme} styles={styles} icon="Play" />
       <Modal title={parentAgentId ? "Launch child role" : "Launch role"} open={open} onOpenChange={setOpen}>
-        <Modal.Content>
-          <ScrollView contentContainerStyle={{ gap: 12, paddingBottom: 8 }}>
+        <Modal.Content contentContainerStyle={{ gap: 12, paddingBottom: 8 }}>
             <Text style={styles.label}>Role</Text>
             {allowed.map((role) => {
               const chosen = selected?.id === role.id;
@@ -618,7 +615,6 @@ function RoleLauncher({
               <Text style={styles.hint}>The selected role’s system prompt is applied separately.</Text>
             </View>
             <View style={[styles.row, { justifyContent: "flex-end" }]}><Button label="Cancel" onPress={() => setOpen(false)} theme={theme} styles={styles} /><Button label="Launch" onPress={() => void launch()} kind="primary" theme={theme} styles={styles} icon="Play" /></View>
-          </ScrollView>
         </Modal.Content>
       </Modal>
     </>
