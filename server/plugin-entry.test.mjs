@@ -67,9 +67,17 @@ test('an unparseable judge fails closed; a dead judge stays quiet instead of loo
  const errors=console.error;console.error=()=>{};
  try{await dead.end();await settle();assert.equal(dead.created.length,1,'no judge retry storm');assert.equal(dead.sent.length,0)}finally{console.error=errors;await dead.unload()}
 });
-test('a supervisor waiting on a running child is neither judged nor nagged',async()=>{
+// Negative control: the old active-child guard drops this real-entry continuation entirely.
+test('a running child does not exempt independent unfinished work through the plugin entry',async()=>{
  const h=load({reply:incomplete,live:[{id:'kid',status:'running',labels:{'paseo.parent-agent-id':'sup'}}]});try{
-  await h.end();await settle();assert.equal(h.created.length,0);assert.equal(h.sent.length,0);
+  await h.end();await settle();assert.equal(h.created.length,1);assert.equal(h.sent.length,1);
+  assert.match(h.sent[0],/Implement the importer fix/);
+ }finally{await h.unload()}
+});
+test('verified in-flight coverage stays parked after the plugin entry judges it',async()=>{
+ const h=load({reply:'{"verdict":"waiting","remainingTasks":["kid is running the importer tests"]}',live:[{id:'kid',status:'running',labels:{'paseo.parent-agent-id':'sup'}}]});try{
+  await h.end();await settle();assert.equal(h.created.length,1);assert.equal(h.sent.length,0);
+  assert.match(h.created[0].prompt,/"id":"kid","status":"running"/);
  }finally{await h.unload()}
 });
 test('a duplicate turn-ended event yields one judge and one continuation',async()=>{

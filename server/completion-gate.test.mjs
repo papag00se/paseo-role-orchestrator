@@ -46,7 +46,7 @@ function setup({verdict='pass',overflow=false,stale=false,judgeMessages=null,liv
   }};
  }}})}};
  const cleanup=installCompletionGate({on:(name,fn)=>{hooks.set(name,fn);return ()=>hooks.delete(name)}});
- return {hooks,created,sent,archived,gateSends,cleanup,releaseJudge,paseo,async fire(kind='completed') {
+ return {hooks,created,sent,archived,gateSends,cleanup,releaseJudge,paseo,agent,async fire(kind='completed') {
   await hooks.get('agent.turn_ended')({agent,outcome:{kind},timeline:[{type:'user_message',text:'Verify tests'},{type:'assistant_message',text:'Evidence '+ 'x'.repeat(7000)}]}, {paseo});
   await new Promise(resolve=>setTimeout(resolve,100));
  }};
@@ -69,28 +69,29 @@ for (const verdict of ['blocked','waiting']) test(`a silent ${verdict} verdict n
   assert.deepEqual(finished[1].remainingTasks,['verify tests'],'log carries the named tasks');
  }finally{console.log=original;h.cleanup()}
 });
-// A supervisor babysitting a delegated child ends many short turns (approving the child's
-// permissions, checking status). The in-memory child maps are lost on any plugin reload and never
-// see children created before load, so the gate would nag "do not idle" on every such turn. Ground
-// truth from agents.list + the paseo.parent-agent-id label is authoritative regardless of reloads.
-test('an actively running descendant suppresses the gate even with no in-memory tracking',async()=>{
+// A busy child is evidence for the judge, not proof that every remaining task is busy.
+// Negative control: restoring either active-descendant early return drops the continuation.
+test('a running child does not hide independent runnable work after a plugin reload',async()=>{
  const h=setup({verdict:'continue',liveDescendants:[{id:'child',status:'running',labels:{'paseo.parent-agent-id':'parent'}}]});try{
   await h.fire();
-  assert.equal(h.created.length,0,'no judge is launched while a descendant works');
-  assert.equal(h.sent.length,0,'the parent is not nagged');
+  assert.equal(h.created.length,1,'the whole request is judged while the child works');
+  assert.equal(h.sent.length,1,'independent runnable work is sent back to the parent');
+  assert.match(h.created[0].prompt,/"id":"child","status":"running"/);
  }finally{h.cleanup()}
 });
-test('a descendant awaiting a permission decision suppresses the gate',async()=>{
+test('a child permission wait does not hide independent runnable work',async()=>{
  const h=setup({verdict:'continue',liveDescendants:[{id:'child',status:'idle',pendingPermissions:[{id:'p'}],labels:{'paseo.parent-agent-id':'parent'}}]});try{
-  await h.fire();assert.equal(h.created.length,0);assert.equal(h.sent.length,0);
+  await h.fire();assert.equal(h.created.length,1);assert.equal(h.sent.length,1);
+  assert.match(h.created[0].prompt,/"pendingPermissions":1/);
  }finally{h.cleanup()}
 });
-test('a transitive grandchild still working suppresses the gate',async()=>{
+test('a transitive running grandchild is evidence, not a blanket exemption',async()=>{
  const h=setup({verdict:'continue',liveDescendants:[
   {id:'child',status:'idle',labels:{'paseo.parent-agent-id':'parent'}},
   {id:'grandchild',status:'running',labels:{'paseo.parent-agent-id':'child'}},
  ]});try{
-  await h.fire();assert.equal(h.created.length,0);
+  await h.fire();assert.equal(h.created.length,1);assert.equal(h.sent.length,1);
+  assert.match(h.created[0].prompt,/"id":"grandchild","status":"running"/);
  }finally{h.cleanup()}
 });
 test('an idle descendant does not suppress the gate',async()=>{
@@ -163,7 +164,7 @@ test('judge prompt reserves blocked for a globally blocked ledger',async()=>{
   assert.match(h.created[0].prompt,/perform ITSELF right now/);
   assert.match(h.created[0].prompt,/already in progress/i);
   assert.match(h.created[0].prompt,/waiting on the owner or an external/i);
-  assert.match(h.created[0].prompt,/Return waiting when the remaining work is already in progress/);
+  assert.match(h.created[0].prompt,/Return waiting only when EVERY incomplete requirement is covered by verified in-flight work/);
   assert.match(h.created[0].prompt,/Return blocked only when/);
   assert.match(h.created[0].prompt,/Do not return blocked for work a running process is already performing/);
   assert.match(h.created[0].prompt,/paseo script ls/);
@@ -214,15 +215,15 @@ test('a persistently malformed verdict fails closed to continue and preserves th
 // The parent gate only runs on the PARENT's own turn_ended. A parent that ends its turn while a
 // child works, and never resumes when the child finishes, is otherwise never revisited (confirmed
 // stalling a real Supervisor run). The last descendant going idle must revisit the parent.
-function wakeSetup() {
+function wakeSetup({siblingRunning=false}={}) {
  const hooks=new Map(), sent=[], created=[];
  const parent={id:'parent',workspaceId:'ws',cwd:home,labels:{'paseo-role-orchestrator.role-id':roleId}};
- const child={id:'child',parentAgentId:'parent',workspaceId:'ws',cwd:home,labels:{'paseo-role-orchestrator.role-id':childRoleId}};
- const byId={parent,child};
+ const child={id:'child',parentAgentId:'parent',workspaceId:'ws',cwd:home,labels:{'paseo-role-orchestrator.role-id':childRoleId,'paseo.parent-agent-id':'parent'}};
+ const byId={parent,child,...(siblingRunning?{child2:{id:'child2',status:'running',labels:{'paseo.parent-agent-id':'parent'}}}:{})};
  const paseo={providers:{listModels:async()=>({models:[{id:'judge'}]})},agents:{list:async()=>({entries:Object.values(byId).map(agent=>({agent}))}),ref:id=>({refresh:async()=>({agent:byId[id]}),send:async t=>sent.push({id,t})})},workspaces:{ref:()=>({agents:{create:async o=>{created.push(o);return{archive:async()=>{},waitForFinish:async()=>({status:'idle',lastMessage:'{"verdict":"continue","remainingTasks":["x"]}'})}}}})}};
  const cleanup=installCompletionGate({on:(name,fn)=>{hooks.set(name,fn);return ()=>hooks.delete(name)}});
- const childEnded=()=>hooks.get('agent.turn_ended')({agent:{id:'child',parentAgentId:'parent',workspaceId:'ws'},outcome:{kind:'completed'},timeline:[]},{paseo});
- return {hooks,sent,created,cleanup,childEnded,
+ const childEnded=(kind='completed')=>hooks.get('agent.turn_ended')({agent:{id:'child',parentAgentId:'parent',workspaceId:'ws'},outcome:{kind},timeline:[]},{paseo});
+ return {hooks,sent,created,cleanup,childEnded,parent,
   woke:()=>sent.filter(s=>s.id==='parent' && /did not resume|not monitoring/i.test(s.t)).length};
 }
 
@@ -247,12 +248,79 @@ test('a parent that resumes on its own is not woken', async()=>{
  }finally{h.cleanup()}
 });
 
-test('a parent with another child still working is not woken early', async()=>{
- const h=wakeSetup();try{
+test('a finished child wakes its idle parent even while another child works', async()=>{
+ const h=wakeSetup({siblingRunning:true});try{
   await h.hooks.get('agent.created')({agent:{id:'child',parentAgentId:'parent'}});
   await h.hooks.get('agent.created')({agent:{id:'child2',parentAgentId:'parent'}});
   await h.childEnded();  // one finishes; a sibling is still active
   await new Promise(r=>setTimeout(r,1300));
+  assert.equal(h.woke(),1,'the finished result must not wait for an unrelated sibling');
+ }finally{h.cleanup()}
+});
+
+// Invariant: verified coverage of all unfinished work leaves the parent parked, without claiming done.
+// Failure caught: removing the waiting disposition would send a needless continuation.
+test('a waiting verdict with a real running child does not nag the parent',async()=>{
+ const h=setup({verdict:'waiting',liveDescendants:[{id:'child',status:'running',labels:{'paseo.parent-agent-id':'parent'}}]});try{
+  await h.fire();
+  assert.equal(h.created.length,1);
+  assert.equal(h.sent.length,0);
+  assert.match(h.created[0].prompt,/"id":"child","status":"running"/);
+ }finally{h.cleanup()}
+});
+
+// Invariant: internal gate/context helpers and unrelated agents are not task descendants.
+// Failure caught: removing the label/tree filters would pollute the judge's task evidence.
+test('the live task snapshot excludes helpers and unrelated running agents',async()=>{
+ const h=setup({liveDescendants:[
+  {id:'task',status:'idle',title:'review result',labels:{'paseo.parent-agent-id':'parent'}},
+  {id:'judge',status:'running',labels:{'paseo.parent-agent-id':'parent','paseo-role-orchestrator.completion-gate':'judge'}},
+  {id:'summary',status:'running',labels:{'paseo.parent-agent-id':'parent','paseo-role-orchestrator.context-helper':'true'}},
+  {id:'unrelated',status:'running',labels:{'paseo.parent-agent-id':'someone-else'}},
+ ]});try{
+  await h.fire();
+  assert.equal(h.sent.length,0);
+  const snapshot=h.created[0].prompt.split('Live descendant snapshot (status and permission counts, not proof of task coverage): ')[1].split('\n')[0];
+  assert.deepEqual(JSON.parse(snapshot),[{id:'task',status:'idle',title:'review result',pendingPermissions:0}]);
+ }finally{h.cleanup()}
+});
+
+// Invariant: existing descendants still wake an idle parent after a reload.
+// Failure caught: resolving parentage only from created-event maps leaves this result unhandled.
+test('a preexisting child wakes its parent with no created event after reload',async()=>{
+ const h=wakeSetup();try{
+  await h.childEnded();await new Promise(r=>setTimeout(r,1300));
+  assert.equal(h.woke(),1);
+ }finally{h.cleanup()}
+});
+
+// Invariant: failed delegated work must be handled, while explicit cancellation is respected.
+// Failure caught: a completed-only wake condition strands errors; a canceled wake overrides a stop.
+for (const kind of ['failed','canceled']) test(`${kind} child result has the correct parent wake disposition`,async()=>{
+ const h=wakeSetup();try{
+  await h.childEnded(kind);await new Promise(r=>setTimeout(r,1300));
+  assert.equal(h.woke(),kind==='failed'?1:0);
+ }finally{h.cleanup()}
+});
+
+// Invariant: a deleted role is visible as unavailable, never silently passed or recreated.
+// Failure caught: the old optional-role early return produces no diagnostic.
+test('a deleted role is reported without launching a judge or aliasing another role',async()=>{
+ const h=setup();const errors=[];const original=console.error;console.error=(...args)=>errors.push(args);
+ try{
+  h.agent.labels['paseo-role-orchestrator.role-id']='33333333-3333-4333-8333-333333333333';
+  await h.fire();
+  assert.equal(h.created.length,0);assert.equal(h.sent.length,0);
+  assert.deepEqual(errors,[['Completion gate unavailable: this agent\'s role was deleted',{agentId:'parent',roleId:'33333333-3333-4333-8333-333333333333'}]]);
+ }finally{console.error=original;h.cleanup()}
+});
+
+// Invariant: an idle parent's own pending permission must not be bypassed by a child wake.
+// Failure caught: removing the pending-permission guard sends a new turn despite required user input.
+test('a child result does not resume a parent awaiting its own permission',async()=>{
+ const h=wakeSetup();try{
+  h.parent.pendingPermissions=[{id:'approval'}];
+  await h.childEnded();await new Promise(r=>setTimeout(r,1300));
   assert.equal(h.woke(),0);
  }finally{h.cleanup()}
 });
