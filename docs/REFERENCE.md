@@ -42,6 +42,10 @@ This plugin does not modify provider modes, permission prompts, approval policie
 
 ## Delegation
 
+The [suggested Supervisor prompt](prompts/supervisor.md) requires a Coder child for substantive agentic coding, keeps implementation and related tests with one owner, and uses additional children for independent work or risk-appropriate review. It discourages per-step approval gates and duplicate verification. This is prompt guidance, not a new runtime restriction or an automatically installed default for user-owned roles.
+
+Role edits apply to subsequent launches. Existing agents retain their captured system prompt unless explicitly updated; saving a role does not restart agents or rewrite their sessions.
+
 Every role launch runs through one server-side path, so a role run is identical whether it was started from the workspace panel, the **Child roles** panel, or by a parent agent: the child receives the role's operating contract as its system prompt, the role's exact provider/model/reasoning/mode, the role label, the Paseo parent/child link, placement in the parent's own workspace and working tree, and any configured inherited parent context.
 
 Parent roles delegate with the plugin's own `launch_role` tool. It is served over MCP from the plugin process and attached per agent, so only agents this plugin launched can see it; the credential in that agent's configuration identifies the calling parent, which is how the allowed-role checklist is enforced in code rather than in prose. `list_roles` returns the permitted catalog with IDs, provider/model, settings and inherited-context defaults. Both tools are preapproved and always loaded so permission friction never pushes a parent back to generic `create_agent`. A child that may itself delegate is issued its own credential during the launch.
