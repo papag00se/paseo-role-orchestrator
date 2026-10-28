@@ -1,7 +1,19 @@
 {
   "name": "paseo-role-orchestrator",
-  "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
+  "description": "Define reusable agent roles, control delegation, and optionally assess completion in Paseo.",
+  "repository": { "type": "git", "url": "git+https://github.com/papag00se/paseo-role-orchestrator.git" },
+  "files": [
+    "paseo-plugin.json",
+    "OVERVIEW.md",
+    "index.client.tsx",
+    "index.server.ts",
+    "client/",
+    "server/",
+    "shared/",
+    "!client/*.test.mjs",
+    "!server/*.test.mjs"
+  ],
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "node --test client/*.test.mjs server/*.test.mjs"

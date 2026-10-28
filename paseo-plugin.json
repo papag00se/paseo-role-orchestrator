@@ -1,13 +1,7 @@
 {
   "id": "paseo-role-orchestrator",
+  "description": "Define agent roles, control delegation, and optionally assess completion in Paseo.",
   "requirements": {
     "paseo": ">=0.11.2 <0.12.0"
-  },
-  "build": [
-    [
-      "npm",
-      "ci",
-      "--legacy-peer-deps"
-    ]
-  ]
+  }
 }
