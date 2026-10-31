@@ -4,7 +4,7 @@
 
 # Paseo Role Orchestrator
 
-![Paseo compatibility](https://img.shields.io/badge/Paseo-0.11.2%E2%80%930.11.x-22c55e?style=flat-square)
+![Paseo compatibility](https://img.shields.io/badge/Paseo-0.14.x-22c55e?style=flat-square)
 ![TypeScript](https://img.shields.io/badge/TypeScript-3178c6?style=flat-square&logo=typescript&logoColor=white)
 ![Platform](https://img.shields.io/badge/Platform-Desktop,%20web%20%26%20mobile-64748b?style=flat-square)
 
@@ -34,7 +34,7 @@
 
 ## Getting started
 
-Requires Paseo 0.11.2–0.11.x (daemon and app):
+Requires Paseo 0.14.x (daemon and app):
 
 ```bash
 git clone https://github.com/papag00se/paseo-role-orchestrator.git
@@ -54,7 +54,7 @@ Open **Settings → Plugins → Role Orchestrator → Roles and delegation**, cr
 
 ## Compatibility
 
-Targets Paseo **0.11.2–0.11.x**, with all three Paseo development SDKs pinned to **0.11.2**. Settings screens, workspace/agent panels, Command Center navigation, and lifecycle hooks use the current runtime contracts. This plugin does not register legacy surfaces, sidebar items, or composer contributions.
+Targets Paseo **0.14.x**, with all three Paseo development SDKs pinned to **0.14.0**. Settings screens, workspace/agent panels, Command Center navigation, and lifecycle hooks use the current runtime contracts. This plugin does not register legacy surfaces, sidebar items, or composer contributions.
 
 Role editing and launch dialogs use the host's scrolling modal body and sheet-aware text inputs, so compact clients retain keyboard and gesture handling. Existing role data, delegation settings, and completion-gate settings keep their storage paths and formats; reload does not reset them. A gate-enabled role that ends a turn with unfinished work is still sent back to continue. Earlier Paseo implementations remain in Git history.
 
