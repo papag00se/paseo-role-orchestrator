@@ -1,14 +1,16 @@
 # Paseo Role Orchestrator
 
-A trusted local Paseo plugin for reusable, provider-neutral agent roles. Requires Paseo 0.11.2–0.11.x on both the daemon and connected app.
+A trusted local Paseo plugin for reusable, provider-neutral agent roles. Requires Paseo 0.14.x on both the daemon and connected app.
 
-## Paseo 0.11.2 compatibility
+## Paseo 0.14 compatibility
 
-- `@getpaseo/plugin`, `@getpaseo/client`, and `@getpaseo/protocol` development dependencies are pinned to 0.11.2. The manifest excludes older runtimes and the next minor release pending validation.
+- `@getpaseo/plugin`, `@getpaseo/client`, and `@getpaseo/protocol` development dependencies are pinned to 0.14.0. The manifest excludes older runtimes and the next minor release pending validation.
 - The client uses supported settings screens, contextual workspace panels, and a global Command Center action. There are no legacy `addSurface`, `addSidebarItem`, or composer registrations to migrate. `PluginSurfaceProps` remains the documented settings-screen contract in 0.11.2.
 - Modal forms use host-provided `TextInput` for native sheet keyboard handling and a single scroll owner (`Modal.Content`). Panel lists use the host-provided `ScrollView`.
 - Role catalog, gate settings, failure evidence, and delegation credentials retain their existing storage paths and formats. No settings migration or reset is performed.
 - Reload only this installation with `paseo plugin reload paseo-role-orchestrator`; do not remove it or restart the daemon.
+
+Validation on 0.14.0 SDK (2026-10-31): typecheck and all 71 tests passed; live reload is checked after the desktop upgrade.
 
 Validation on 0.11.2: typecheck and all 63 tests passed. Live reload reported `running` with no current load error, and logs recorded `Plugin ready`. Read-only RPC checks returned all four existing roles and configured gate settings; an invalid role launch was correctly rejected without creating an agent. Client contract tests exercise settings navigation and wide/compact role-editor rendering with host primitives, but are not a real-device visual test. Completion tests use mocked providers; no live judge model turn was started during migration.
 
