@@ -81,13 +81,14 @@ export const LAUNCH_DESCRIPTION = [
   "",
   "Unlike generic create_agent, one call applies all of this server-side and verified:",
   "1. the child's complete role operating contract as its system prompt,",
-  "2. the role's exact provider, model, reasoning level and mode,",
+  "2. the role's provider, default model, reasoning level and mode, with optional per-launch model and reasoning overrides,",
   "3. the role label Paseo needs to track and judge it as a role run,",
   "4. the parent/child link, so its final result is reported back to you,",
   "5. placement in your own workspace and working tree (never a new workspace, worktree or branch),",
   "6. whatever parent-session context that role pair is configured to inherit, and",
   "7. the child's own delegation tools when that role may delegate further.",
   "",
+  "The model override is an ID within the role's provider, not a different Paseo provider. Use list_models to discover model IDs and their thinking options. Overrides affect only this launch and do not change the saved role.",
   "Your permitted roles are enforced here: an unlisted role is rejected with the list you may use.",
   "Follow up with send_agent_prompt to the returned agentId; launch a new child only for new work.",
 ].join("\n");
@@ -115,6 +116,18 @@ export const LAUNCH_SCHEMA = {
       enum: ["none", "summary", "full"],
       description:
         'How much of your own session the child inherits. Defaults to the configured value for this role pair. "summary" costs one short helper run; "full" attaches your complete timeline unedited.',
+    },
+    model: {
+      type: "string",
+      minLength: 1,
+      maxLength: 240,
+      description: "Optional model ID within the role's provider, as returned by list_models (for example openai/gpt-6.1-terra for Pi). Omit to use the role's configured model.",
+    },
+    thinkingOptionId: {
+      type: ["string", "null"],
+      minLength: 1,
+      maxLength: 160,
+      description: "Optional reasoning option ID for the selected model, as returned by list_models. Omit to use the role's configured level, or pass null to use the provider default.",
     },
   },
   required: ["role", "prompt"],
@@ -249,6 +262,13 @@ export async function installRoleTools(): Promise<RoleToolsRuntime> {
       const prompt = typeof args.prompt === "string" ? args.prompt : "";
       if (!role) throw new Error("`role` is required: pass a role ID or exact role name from list_roles.");
       if (!prompt.trim()) throw new Error("`prompt` is required: describe the complete assigned task.");
+      if (args.model !== undefined && (typeof args.model !== "string" || !args.model.trim() || args.model.trim().length > 240)) {
+        throw new Error("`model` must be a non-empty model ID of at most 240 characters.");
+      }
+      if (args.thinkingOptionId !== undefined && args.thinkingOptionId !== null &&
+          (typeof args.thinkingOptionId !== "string" || !args.thinkingOptionId.trim() || args.thinkingOptionId.trim().length > 160)) {
+        throw new Error("`thinkingOptionId` must be a non-empty option ID of at most 160 characters, or null for the provider default.");
+      }
       const parentContext =
         args.parentContext === "none" || args.parentContext === "summary" || args.parentContext === "full"
           ? (args.parentContext as ParentContext)
@@ -260,12 +280,15 @@ export async function installRoleTools(): Promise<RoleToolsRuntime> {
         title: typeof args.title === "string" ? args.title : undefined,
         prompt,
         parentContext,
+        model: args.model as string | undefined,
+        thinkingOptionId: args.thinkingOptionId as string | null | undefined,
       });
       return {
         agentId: result.agentId,
         role: result.role.name,
         roleId: result.role.id,
-        provider: providerModel(result.role),
+        provider: result.provider,
+        thinkingOptionId: result.thinkingOptionId,
         workspaceId: result.workspaceId,
         cwd: result.cwd,
         parentContextAttached: result.parentContext,

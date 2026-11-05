@@ -18,6 +18,10 @@ export interface LaunchRequest {
   title?: string;
   prompt: string;
   parentContext?: ParentContext;
+  /** Model ID within the role's provider; defaults to the role's model. */
+  model?: string;
+  /** Null selects the provider default; omission uses the role's configured level. */
+  thinkingOptionId?: string | null;
 }
 
 export interface LaunchResult {
@@ -27,6 +31,8 @@ export interface LaunchResult {
   cwd: string | null;
   parentContext: ParentContext;
   canDelegate: boolean;
+  provider: string;
+  thinkingOptionId: string | null;
 }
 
 /** Attaches delegation tools to a child that may itself delegate. */
@@ -134,6 +140,15 @@ export async function launchRole(
   }
   const prompt = request.prompt.trim();
   if (!prompt) throw new Error("A child role needs an assigned task prompt.");
+  const model = request.model === undefined ? child.model : request.model.trim();
+  if (!model || model.length > 240) throw new Error("`model` must be a non-empty model ID of at most 240 characters.");
+  const thinkingOptionId = request.thinkingOptionId === undefined
+    ? child.thinkingOptionId
+    : request.thinkingOptionId === null ? null : request.thinkingOptionId.trim();
+  if (thinkingOptionId !== null && (!thinkingOptionId || thinkingOptionId.length > 160)) {
+    throw new Error("`thinkingOptionId` must be a non-empty option ID of at most 160 characters, or null for the provider default.");
+  }
+  const provider = providerModel({ provider: child.provider, model });
 
   let workspaceId = request.workspaceId;
   let cwd: string | null = null;
@@ -173,13 +188,13 @@ export async function launchRole(
     prompt: childPrompt,
     labels: { [ROLE_LABEL]: child.id },
     config: {
-      provider: providerModel(child),
-      ...(child.thinkingOptionId ? { thinkingOptionId: child.thinkingOptionId } : {}),
+      provider,
+      ...(thinkingOptionId ? { thinkingOptionId } : {}),
       ...(child.modeId ? { modeId: child.modeId } : {}),
       ...(systemPrompt ? { systemPrompt } : {}),
       ...extraConfig,
     },
   });
 
-  return { agentId: agent.id, role: child, workspaceId, cwd, parentContext, canDelegate };
+  return { agentId: agent.id, role: child, workspaceId, cwd, parentContext, canDelegate, provider, thinkingOptionId };
 }
