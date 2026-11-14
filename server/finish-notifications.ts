@@ -45,7 +45,7 @@ export async function hasPendingFinishNotification(callerId: string, childIds: I
   });
 }
 
-const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+const sleep = (ms: number) => (ms > 0 ? new Promise<void>((resolve) => setTimeout(resolve, ms)) : Promise.resolve());
 
 /**
  * Lets Paseo's own child-finished notification reach `callerId` before a plugin nudges it.
