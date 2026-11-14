@@ -221,7 +221,7 @@ function wakeSetup({siblingRunning=false}={}) {
  const child={id:'child',parentAgentId:'parent',workspaceId:'ws',cwd:home,labels:{'paseo-role-orchestrator.role-id':childRoleId,'paseo.parent-agent-id':'parent'}};
  const byId={parent,child,...(siblingRunning?{child2:{id:'child2',status:'running',labels:{'paseo.parent-agent-id':'parent'}}}:{})};
  const paseo={providers:{listModels:async()=>({models:[{id:'judge'}]})},agents:{list:async()=>({entries:Object.values(byId).map(agent=>({agent}))}),ref:id=>({refresh:async()=>({agent:byId[id]}),send:async t=>sent.push({id,t})})},workspaces:{ref:()=>({agents:{create:async o=>{created.push(o);return{archive:async()=>{},waitForFinish:async()=>({status:'idle',lastMessage:'{"verdict":"continue","remainingTasks":["x"]}'})}}}})}};
- const cleanup=installCompletionGate({on:(name,fn)=>{hooks.set(name,fn);return ()=>hooks.delete(name)}});
+ const cleanup=installCompletionGate({on:(name,fn)=>{hooks.set(name,fn);return ()=>hooks.delete(name)}},{notificationTiming:{graceMs:400}});
  const childEnded=(kind='completed')=>hooks.get('agent.turn_ended')({agent:{id:'child',parentAgentId:'parent',workspaceId:'ws'},outcome:{kind},timeline:[]},{paseo});
  return {hooks,sent,created,cleanup,childEnded,parent,
   woke:()=>sent.filter(s=>s.id==='parent' && /did not resume|not monitoring/i.test(s.t)).length};

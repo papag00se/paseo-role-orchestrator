@@ -9,6 +9,7 @@ import { CompletionGateSettingsSchema, ROLE_LABEL, type CompletionGateSettings }
 import { getRoles } from "./roles";
 import { CONTEXT_HELPER_LABEL } from "./role-launch";
 import { completionEvidence, reduceEvidence, SUMMARY_PROMPT } from "./completion-evidence";
+import { awaitFinishNotification, type FinishNotificationTiming } from "./finish-notifications";
 
 const file = join(process.env.PASEO_HOME || join(homedir(), ".paseo"), "plugin-data", "role-orchestrator-completion-gate.json");
 const failureLog = join(dirname(file), "role-orchestrator-gate-failures.jsonl");
@@ -180,8 +181,9 @@ function verdict(text: string): Verdict {
 }
 
 /** Plugin-only completion enforcement through the public lifecycle hooks (Paseo 0.9.1 `server.on`). */
-export function installCompletionGate(server: PluginServerContext): () => void {
-  const waking = new Set<string>();
+export function installCompletionGate(server: PluginServerContext, options: { notificationTiming?: Partial<FinishNotificationTiming> } = {}): () => void {
+  // Children whose results a parent's pending wake is waiting on; one wake per parent.
+  const wakingChildren = new Map<string, Set<string>>();
   const ownAgentIds = new Set<string>();
   const isOwnAgent = (agent: { id: string; title?: string | null }): boolean =>
     ownAgentIds.has(agent.id) || agent.title === JUDGE_TITLE || agent.title === SUMMARY_TITLE;
@@ -195,14 +197,26 @@ export function installCompletionGate(server: PluginServerContext): () => void {
   };
   // Every finished result needs handling, even when siblings still work. Persisted parent labels
   // survive reloads; a moved parent generation means its own coordination turn already handled it.
-  const wakeSleepingParent = async (paseo: PaseoApi, parentId: string): Promise<void> => {
-    if (stopped || waking.has(parentId)) return;
+  // Paseo delivers its own "child finished" notification to an idle parent a few seconds later,
+  // so the nudge waits for that delivery (see finish-notifications.ts) instead of racing it.
+  const wakeSleepingParent = async (paseo: PaseoApi, parentId: string, childId: string): Promise<void> => {
+    if (stopped) return;
+    const finished = wakingChildren.get(parentId);
+    if (finished) {
+      finished.add(childId);
+      return;
+    }
     const generation = gateGenerationByAgentId.get(parentId) ?? 0;
-    waking.add(parentId);
+    wakingChildren.set(parentId, new Set([childId]));
     try {
-      await new Promise<void>((resolve) => setTimeout(resolve, QUIESCENCE_DELAY_MS));
-      // A parent that resumed during quiescence needs no extra nudge.
-      if (stopped || (gateGenerationByAgentId.get(parentId) ?? 0) !== generation) return;
+      const proceed = await awaitFinishNotification({
+        callerId: parentId,
+        childIds: () => wakingChildren.get(parentId) ?? [],
+        superseded: () => stopped || (gateGenerationByAgentId.get(parentId) ?? 0) !== generation,
+        timing: options.notificationTiming,
+      });
+      // A parent that resumed while its notification was delivered needs no extra nudge.
+      if (!proceed) return;
       const snapshot = await paseo.agents.ref(parentId).refresh();
       const agent = snapshot?.agent;
       if (!agent || agent.labels[COMPLETION_AGENT_LABEL] || agent.pendingPermissions?.length) return;
@@ -218,7 +232,7 @@ export function installCompletionGate(server: PluginServerContext): () => void {
     } catch (error) {
       console.error("Failed to wake a sleeping parent", { agentId: parentId, error });
     } finally {
-      waking.delete(parentId);
+      wakingChildren.delete(parentId);
     }
   };
 
@@ -242,7 +256,7 @@ export function installCompletionGate(server: PluginServerContext): () => void {
     if (!agent || agent.labels[COMPLETION_AGENT_LABEL] || agent.labels[CONTEXT_HELPER_LABEL]) return;
     // Failed children also leave a result to handle. A user-canceled turn is not permission to rerun it.
     const parentId = agent.labels[PARENT_LABEL];
-    if (parentId && event.outcome.kind !== "canceled") void wakeSleepingParent(paseo, parentId);
+    if (parentId && event.outcome.kind !== "canceled") void wakeSleepingParent(paseo, parentId, event.agent.id);
     // Every completed, eligible turn gets its own check — even one that ends while an
     // earlier check's judge is still running. There is no single-flight suppression here:
     // suppressing the newer turn once dropped the one verdict that mattered (the older
