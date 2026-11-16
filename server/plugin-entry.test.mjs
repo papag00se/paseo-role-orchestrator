@@ -30,13 +30,15 @@ function load({reply,roleId=gated,live=[]}={}) {
  const hooks=new Map(), sent=[], created=[];
  const server={handle(){},before:()=>()=>{},on:(name,fn)=>{hooks.set(name,fn);return ()=>hooks.delete(name)}};
  const unload=contribute(server);
+ // Paseo 0.14+ delivers an empty `timeline` on turn_ended; the gate fetches history itself.
+ const history=[{type:'user_message',text:'Fix the Java importer and prove it with tests'},{type:'assistant_message',text:'Progress report: I reviewed the code and will fix it next.'}];
  const agent={id:'sup',cwd:home,workspaceId:'ws',labels:{'paseo-role-orchestrator.role-id':roleId}};
  const paseo={providers:{listModels:async()=>({models:[{id:'judge'}]})},
-  agents:{list:async()=>({entries:[{agent},...live.map(a=>({agent:a}))]}),ref:()=>({refresh:async()=>({agent}),send:async t=>sent.push(t)})},
+  agents:{list:async()=>({entries:[{agent},...live.map(a=>({agent:a}))]}),ref:()=>({refresh:async()=>({agent}),timeline:{refetch:async()=>({entries:history.map(item=>({item})),hasOlder:false})},send:async t=>sent.push(t)})},
   workspaces:{ref:()=>({agents:{create:async o=>{created.push(o);return {id:'j'+created.length,archive:async()=>{},send:async()=>{},
    waitForFinish:async()=>typeof reply==='function'?reply():{status:'idle',lastMessage:reply}}}}})}};
  const end=()=>hooks.get('agent.turn_ended')({agent:{id:'sup',workspaceId:'ws',parentAgentId:null,title:'Supervisor'},turnId:'t1',outcome:{kind:'completed'},
-  timeline:[{type:'user_message',text:'Fix the Java importer and prove it with tests'},{type:'assistant_message',text:'Progress report: I reviewed the code and will fix it next.'}]},{paseo});
+  timeline:[]},{paseo});
  return {hooks,sent,created,end,unload};
 }
 const settle=()=>new Promise(r=>setTimeout(r,1500));

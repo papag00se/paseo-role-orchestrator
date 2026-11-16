@@ -10,6 +10,7 @@ import { getRoles } from "./roles";
 import { CONTEXT_HELPER_LABEL } from "./role-launch";
 import { sanctionedLaunchLabels } from "./child-policy";
 import { completionEvidence, reduceEvidence, SUMMARY_PROMPT } from "./completion-evidence";
+import { fullTimeline } from "./timeline";
 import { awaitFinishNotification, type FinishNotificationTiming } from "./finish-notifications";
 
 const file = join(process.env.PASEO_HOME || join(homedir(), ".paseo"), "plugin-data", "role-orchestrator-completion-gate.json");
@@ -306,7 +307,7 @@ export function installCompletionGate(server: PluginServerContext, options: { no
           } finally { await gate.archive().catch(() => undefined); ownAgentIds.delete(gate.id); }
         };
         const window = await modelContextWindow(paseo, settings.provider, settings.model, agent.cwd);
-        let evidence = completionEvidence(event.timeline);
+        let evidence = completionEvidence(await fullTimeline(paseo, event.agent.id));
         console.log("Completion check started", { agentId: agent.id, evidenceBytes: Buffer.byteLength(evidence), contextWindow: window });
         // UTF-8 bytes are a conservative text-token estimate, not a tokenizer.
         // Reserve half the window for harness instructions/tools and output.

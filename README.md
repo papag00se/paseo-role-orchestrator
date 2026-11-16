@@ -4,7 +4,7 @@
 
 # Paseo Role Orchestrator
 
-![Paseo compatibility](https://img.shields.io/badge/Paseo-0.14.x-22c55e?style=flat-square)
+![Paseo compatibility](https://img.shields.io/badge/Paseo-0.14%E2%80%930.16-22c55e?style=flat-square)
 ![TypeScript](https://img.shields.io/badge/TypeScript-3178c6?style=flat-square&logo=typescript&logoColor=white)
 ![Platform](https://img.shields.io/badge/Platform-Desktop,%20web%20%26%20mobile-64748b?style=flat-square)
 
@@ -35,7 +35,7 @@
 
 ## Getting started
 
-Requires Paseo 0.14.x (daemon and app):
+Requires Paseo 0.14 through 0.16 (run on 0.14, typechecked against 0.16.0) (daemon and app):
 
 ```bash
 git clone https://github.com/papag00se/paseo-role-orchestrator.git
