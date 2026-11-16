@@ -28,7 +28,7 @@ after(()=>rm(home,{recursive:true,force:true}));
 
 function load({reply,roleId=gated,live=[]}={}) {
  const hooks=new Map(), sent=[], created=[];
- const server={handle(){},on:(name,fn)=>{hooks.set(name,fn);return ()=>hooks.delete(name)}};
+ const server={handle(){},before:()=>()=>{},on:(name,fn)=>{hooks.set(name,fn);return ()=>hooks.delete(name)}};
  const unload=contribute(server);
  const agent={id:'sup',cwd:home,workspaceId:'ws',labels:{'paseo-role-orchestrator.role-id':roleId}};
  const paseo={providers:{listModels:async()=>({models:[{id:'judge'}]})},

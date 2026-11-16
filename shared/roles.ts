@@ -30,6 +30,8 @@ export const RoleSchema = z.object({
     allowedRoleIds: z.array(roleId).max(64),
     childContexts: z.record(roleId, z.enum(["none", "full", "summary"])).default({}),
     completionGateEnabled: z.boolean().default(false),
+    /** Subagents this role's agents create must use the worker provider and may only message their parent. */
+    restrictChildCommunication: z.boolean().default(false),
   }),
   createdAt: z.string(),
   updatedAt: z.string(),
@@ -100,6 +102,12 @@ export const deleteRole = defineRpc({
 });
 
 export const ROLE_LABEL = "paseo-role-orchestrator.role-id";
+/** Stamped on an agent at launch when its role restricts child communication; the value never changes afterwards. */
+export const CHILD_POLICY_LABEL = "paseo-role-orchestrator.child-policy";
+export const CHILD_POLICY_PARENT_ONLY = "parent-only";
+/** Daemon provider (extends `pi`, Paseo tools disabled) that restricted parents must use for their subagents. */
+export const WORKER_PROVIDER = "pi-worker";
+export const CHILD_PROVIDER_REFUSAL = `This parent's subagents must use provider ${WORKER_PROVIDER}; relaunch with that provider.`;
 
 export function providerModel(role: Pick<Role, "provider" | "model">): string {
   return `${role.provider}/${role.model}`;
@@ -125,5 +133,8 @@ export function systemPromptForRole(role: Role, roles: readonly Role[]): string 
   const delegation = role.delegation.enabled
     ? `## Delegating work\nYou are a parent role and may delegate only to the configured child roles below. Prefer the most specific fitting role; use General Purpose only when no specialist role fits.\n\nDelegate with the \`launch_role\` tool. Give it the role and the complete assigned task; it applies the child's role operating contract, provider and default settings, the required role label, the parent/child link that reports the result back to you, placement in your own workspace, and any configured inherited context. Optionally override the model and thinkingOptionId for an individual launch; the provider and role configuration remain unchanged. Use list_models to discover valid model IDs and thinking options. Generic \`create_agent\` does none of that and produces a roleless child that is invisible to role tracking and completion judging. Use \`list_roles\` when choosing an owner, and \`launch_role\` for every child; do not hand-assemble a child with generic \`create_agent\` while \`launch_role\` is available.\n\n\`launch_role\` already places the child beside you. Do not call \`create_workspace\`, and do not create a git worktree, branch, or separate checkout for a child role. If isolation is genuinely required, ask the user first.\n\nOnly if \`launch_role\` is unavailable in this session, fall back to generic \`create_agent\`: pass your own \`workspaceId\`, the catalog entry's exact provider and settings, its required label, and an \`initialPrompt\` that begins with the complete role operating contract followed by a clear \`## Assigned task\` section. Never create an unlabeled child, substitute another provider, omit the operating contract, or delegate to a role not listed here.\n\n${childCatalog}\n\nUse \`list_agents\` and \`get_agent_status\` to monitor, \`send_agent_prompt\` to keep the same owner through its acceptance cohort, and \`cancel_agent\`, \`archive_agent\`, or \`update_agent\` to manage an existing child.`
     : "";
-  return [base, delegation].filter(Boolean).join("\n\n") || undefined;
+  const restriction = role.delegation.restrictChildCommunication
+    ? `## Subagent communication restriction\nEvery subagent you create must use the provider \`${WORKER_PROVIDER}\` (for example \`${WORKER_PROVIDER}/<model id>\`, the same model ids as \`pi\`). Creating a subagent with any other provider is refused. Subagents on \`${WORKER_PROVIDER}\` have no Paseo tools and cannot message other agents or the user; their only channel is a \`message_parent\` tool that sends you a message. Their final report still reaches you normally when they finish. When a child role is listed above, it can only be launched if its provider is \`${WORKER_PROVIDER}\`.`
+    : "";
+  return [base, delegation, restriction].filter(Boolean).join("\n\n") || undefined;
 }

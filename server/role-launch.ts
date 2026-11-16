@@ -1,5 +1,6 @@
 import type { PaseoApi } from "@getpaseo/client";
-import { ROLE_LABEL, providerModel, systemPromptForRole, type Role } from "../shared/roles";
+import { CHILD_POLICY_LABEL, CHILD_POLICY_PARENT_ONLY, CHILD_PROVIDER_REFUSAL, ROLE_LABEL, WORKER_PROVIDER, providerModel, systemPromptForRole, type Role } from "../shared/roles";
+import { sanctionedLaunchLabels } from "./child-policy";
 import { getRoles } from "./roles";
 
 export type ParentContext = "none" | "full" | "summary";
@@ -87,7 +88,7 @@ async function summarizeParentTimeline(
     parent: parentAgentId,
     title: "Preparing child context",
     prompt: `Summarize this complete parent-agent timeline for a child agent. Preserve the user's goal, requirements, constraints, relevant repository paths, decisions, findings, work already completed, current state, and explicit acceptance criteria. Do not perform the task or add assumptions.\n\n## Complete parent timeline\n\n${timeline}`,
-    labels: { [CONTEXT_HELPER_LABEL]: "true" },
+    labels: { [CONTEXT_HELPER_LABEL]: "true", ...sanctionedLaunchLabels() },
     config: {
       provider: `${parent.provider}/${parent.model}`,
       ...(parent.thinkingOptionId ? { thinkingOptionId: parent.thinkingOptionId } : {}),
@@ -161,6 +162,10 @@ export async function launchRole(
     if (!agent?.workspaceId) {
       throw new Error("The parent agent has no workspace, so a child cannot be placed beside it.");
     }
+    // Refuse before any helper agent exists; the daemon hook would refuse the same launch later.
+    if (agent.labels?.[CHILD_POLICY_LABEL] === CHILD_POLICY_PARENT_ONLY && child.provider !== WORKER_PROVIDER) {
+      throw new Error(`${CHILD_PROVIDER_REFUSAL} The ${child.name} role uses provider ${child.provider}.`);
+    }
     workspaceId = agent.workspaceId;
     cwd = agent.cwd;
     parentSnapshot = agent;
@@ -186,7 +191,10 @@ export async function launchRole(
     ...(request.parent ? { parent: request.parent.agentId } : {}),
     title: request.title?.trim() || child.name,
     prompt: childPrompt,
-    labels: { [ROLE_LABEL]: child.id },
+    labels: {
+      [ROLE_LABEL]: child.id,
+      ...(child.delegation.restrictChildCommunication ? { [CHILD_POLICY_LABEL]: CHILD_POLICY_PARENT_ONLY } : {}),
+    },
     config: {
       provider,
       ...(thinkingOptionId ? { thinkingOptionId } : {}),
