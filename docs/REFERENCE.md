@@ -58,6 +58,47 @@ Paseo's built-in `create_agent` has no `roleId` or `systemPrompt` argument, so i
 
 The remaining gap is honest: a parent can still call generic `create_agent` directly. Preventing that needs a per-agent tool policy. Paseo's `ProviderPaseoToolsPolicy` (`enabled`, `disabledTools`) resolves per provider and daemon-wide, so disabling `create_agent` for one Supervisor would disable it for every agent on that provider. The plugin does not pretend otherwise, and does not race to archive an already-started unauthorized child.
 
+## Restricting subagent communication
+
+The role setting **Subagents can only message this agent** (`delegation.restrictChildCommunication`, Delegation section of the role editor) makes every subagent of an agent launched from that role a *worker*: it must run on the `pi-worker` provider, has no Paseo tools, and has exactly one way to reach another agent, a `message_parent` tool that sends a message to its parent. The setting is stamped on the agent as the label `paseo-role-orchestrator.child-policy=parent-only` when the role launches, like the captured system prompt: editing the role later does not change agents already running. Agents that do not carry the label, including every agent from a role with the setting off, are never touched.
+
+### Daemon provider (one-time setup)
+
+Add a provider that extends `pi` with Paseo tools turned off. It inherits `pi`'s launch command, so the `agent-scope.sh` and chrome-bridge guard wrapper apply unchanged; only the model list is copied, because a derived provider without `models` shows every model Pi discovers instead of the curated list. With `jq`:
+
+```bash
+jq '.agents.providers["pi-worker"] = {extends: "pi", label: "Pi worker", paseoTools: {enabled: false}, models: .agents.providers.pi.models}' ~/.paseo/config.json > /var/tmp/config.json && mv /var/tmp/config.json ~/.paseo/config.json && paseo reload
+```
+
+The resulting entry is `"pi-worker": { "extends": "pi", "label": "Pi worker", "paseoTools": { "enabled": false }, "models": [ <same array as pi> ] }`. Re-run it after changing the `pi` model list. Roles that launch workers choose provider `pi-worker` and any `pi` model.
+
+Why not `enabled: true` with `disabledTools`? Paseo delivers plugin-attached tools through its own MCP server, and `enabled: false` stops that server being injected at all (and filters plugin tools). So `message_parent` is served by this plugin's own MCP endpoint (`/worker-mcp`, launch-only through `agent.session_open`) rather than as an attached tool. The result is default-deny: a Paseo upgrade that adds tools cannot leak them to workers.
+
+### Enforcement
+
+`before("agent.session_open")` runs during creation before the provider session exists. For a child whose `paseo.parent-agent-id` parent carries the policy label:
+
+- **create** on any provider other than `pi-worker` throws `This parent's subagents must use provider pi-worker; relaunch with that provider.` The daemon wraps it as `Plugin paseo-role-orchestrator before agent.session_open failed: ...`; it reaches the parent's `create_agent` call (or `launch_role`, which also refuses earlier, before any summary helper is made).
+- **create** on `pi-worker` attaches the `parent` MCP server (credential signed per agent) and puts a `paseo` shim that refuses first on the agent's `PATH`.
+- **resume, refresh, import** are not enforced: an existing child reopens as it was, and a worker has its tool and shim re-attached because session-open overrides are re-derived on every open. History-only opens are ignored.
+- The plugin's own helpers under a restricted parent (context summaries, completion judges) are exempt through a one-time label that is spent on first use, so copying it onto a later `create_agent` fails.
+
+`message_parent` reads the parent from the calling agent's own `paseo.parent-agent-id` label (never from the request) and sends the text to that agent. A worker's final report still reaches its parent through Paseo's normal finish notification.
+
+### Telling the parent
+
+A role with the setting on gets this section appended to its system prompt at launch: every subagent must use provider `pi-worker` (for example `pi-worker/<model id>`), other providers are refused, workers have no Paseo tools and can only `message_parent`, and a listed child role can only be launched if its provider is `pi-worker`. Nothing else is needed in the role prompt. Configure the child roles of a restricted parent with provider `pi-worker` so `launch_role` works.
+
+### Limits
+
+- The `paseo` shim is a speed bump: a worker with a shell can still call the real CLI by absolute path or talk to the daemon directly. Real isolation would need the worker's process sandboxed from the daemon port.
+- Only creation through the daemon is checked. An agent that creates children outside the `paseo.parent-agent-id` link (for example a detached create in a Paseo version that offers one) is not seen by the hook; Paseo 0.14's `create_agent` always links the caller as parent.
+- Enabling the plugin's `agent.session_open` hook marks every open agent session stale once (Paseo reopens each before its next idle prompt); roles with the setting off behave as before.
+
+### What a refused creation leaves behind
+
+Checked on a throwaway 0.14 daemon: a refused `create_agent` over MCP leaves no agent record, no files, no workspace or worktree (an MCP `create_agent` places the child in the caller's existing workspace and has no worktree option), and starts no process, because the refusal happens before `createSession`. A refused creation from the app/CLI creation path leaves one failed creation receipt in `~/.paseo/creations/` (about 600 bytes plus a 64-byte claim file, the same ledger every creation writes, never pruned). The daemon also keeps one small in-memory entry (the agent's Paseo tool policy, set just before the hook runs) until restart; a plugin cannot clear it.
+
 ## Development
 
 ```bash

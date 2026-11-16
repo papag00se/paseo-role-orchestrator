@@ -26,9 +26,11 @@ after(()=>rm(home,{recursive:true,force:true}));
 
 function setup({verdict='pass',overflow=false,stale=false,judgeMessages=null,liveDescendants=[],listThrows=false,hangFirstJudge=false,emitJudgeLifecycle=false}={}) {
  const hooks=new Map(), created=[], sent=[], archived=[], gateSends=[];
+ // Paseo 0.14+ delivers an empty `timeline` on turn_ended, so the gate must fetch history itself.
+ const history=[{type:'user_message',text:'Verify tests'},{type:'assistant_message',text:'Evidence '+ 'x'.repeat(7000)}];
  let releaseJudge;const judgeHang=new Promise(resolve=>releaseJudge=resolve);let gateCount=0;
  const agent={id:'parent',provider:'test',model:'model',cwd:home,workspaceId:'workspace',labels:{'paseo-role-orchestrator.role-id':roleId}};
- const paseo={providers:{listModels:async()=>({models:[{id:'judge'}]})},agents:{list:async()=>{if(listThrows)throw new Error('daemon unreachable');return {entries:[{agent},...liveDescendants.map(a=>({agent:a}))]}},ref:()=>({refresh:async()=>({agent}),send:async text=>sent.push(text),run:()=>{throw Error('Supervisor must never summarize')}})},workspaces:{ref:()=>({agents:{create:async options=>{
+ const paseo={providers:{listModels:async()=>({models:[{id:'judge'}]})},agents:{list:async()=>{if(listThrows)throw new Error('daemon unreachable');return {entries:[{agent},...liveDescendants.map(a=>({agent:a}))]}},ref:()=>({refresh:async()=>({agent}),timeline:{refetch:async()=>({entries:history.map(item=>({item})),hasOlder:false})},send:async text=>sent.push(text),run:()=>{throw Error('Supervisor must never summarize')}})},workspaces:{ref:()=>({agents:{create:async options=>{
   created.push(options);
   assert.equal(options.parent,undefined);
   assert.equal(options.config.provider,'test/judge');
@@ -47,7 +49,7 @@ function setup({verdict='pass',overflow=false,stale=false,judgeMessages=null,liv
  }}})}};
  const cleanup=installCompletionGate({on:(name,fn)=>{hooks.set(name,fn);return ()=>hooks.delete(name)}});
  return {hooks,created,sent,archived,gateSends,cleanup,releaseJudge,paseo,agent,async fire(kind='completed') {
-  await hooks.get('agent.turn_ended')({agent,outcome:{kind},timeline:[{type:'user_message',text:'Verify tests'},{type:'assistant_message',text:'Evidence '+ 'x'.repeat(7000)}]}, {paseo});
+  await hooks.get('agent.turn_ended')({agent,outcome:{kind},timeline:[]}, {paseo});
   await new Promise(resolve=>setTimeout(resolve,100));
  }};
 }

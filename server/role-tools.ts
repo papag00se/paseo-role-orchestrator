@@ -1,9 +1,11 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { randomBytes, randomUUID } from "node:crypto";
+import { createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import type { PaseoApi } from "@getpaseo/client";
+import type { PluginSessionOpenRequest } from "@getpaseo/plugin/server";
+import { PARENT_AGENT_LABEL } from "../shared/role-runs";
 import { ROLE_LABEL, providerModel, type Role } from "../shared/roles";
 import { getRoles } from "./roles";
 import {
@@ -13,7 +15,12 @@ import {
   type ParentContext,
 } from "./role-launch";
 
+export type McpServerEntry = PluginSessionOpenRequest["mcpServers"][string];
+
 export const SERVER_KEY = "roles";
+/** MCP server key and endpoint path of the single `message_parent` tool given to restricted workers. */
+export const WORKER_SERVER_KEY = "parent";
+const WORKER_MCP_PATH = "/worker-mcp";
 const PROTOCOL_VERSION = "2025-06-18";
 
 /**
@@ -43,10 +50,12 @@ interface StoredState {
   version: 1;
   port: number | null;
   grants: Record<string, Grant>;
+  /** Signs worker credentials, so they need no per-agent storage and survive reopen and reload. */
+  workerSecret: string;
 }
 
 function emptyState(): StoredState {
-  return { version: 1, port: null, grants: {} };
+  return { version: 1, port: null, grants: {}, workerSecret: randomBytes(32).toString("base64url") };
 }
 
 export async function loadState(): Promise<StoredState> {
@@ -57,6 +66,7 @@ export async function loadState(): Promise<StoredState> {
       version: 1,
       port: typeof parsed.port === "number" ? parsed.port : null,
       grants: parsed.grants && typeof parsed.grants === "object" ? parsed.grants : {},
+      workerSecret: typeof parsed.workerSecret === "string" && parsed.workerSecret ? parsed.workerSecret : randomBytes(32).toString("base64url"),
     };
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return emptyState();
@@ -134,6 +144,19 @@ export const LAUNCH_SCHEMA = {
   additionalProperties: false,
 } as const;
 
+export const MESSAGE_PARENT_DESCRIPTION = [
+  "Send a message to the agent that launched you. This is your only channel to any other agent: you have no other Paseo tools.",
+  "Use it for a blocking question, a decision you need, or an important finding before you finish.",
+  "Your final report reaches your parent automatically when you finish, so do not repeat it here.",
+].join("\n");
+
+export const MESSAGE_PARENT_SCHEMA = {
+  type: "object",
+  properties: { message: { type: "string", minLength: 1, description: "The message for your parent agent." } },
+  required: ["message"],
+  additionalProperties: false,
+} as const;
+
 export const LIST_DESCRIPTION = [
   "List the child roles you may delegate to, with the exact ID, description, provider/model, reasoning",
   "settings, inherited-context default, and whether that role may delegate further.",
@@ -161,6 +184,8 @@ export interface RoleToolsRuntime {
   /** Launch a role, attaching delegation tools to the child when that role may delegate. */
   /** Remember the daemon API so agent-called tools work after a plugin reload. */
   connect(paseo: PaseoApi): void;
+  /** MCP server entry (launch-only) giving one restricted worker its `message_parent` tool. */
+  workerMcpServer(agentId: string): McpServerEntry;
   launch(paseo: PaseoApi, request: LaunchRequest): ReturnType<typeof launchRole>;
   port(): number | null;
   close(): Promise<void>;
@@ -176,6 +201,7 @@ class JsonRpcError extends Error {
 
 export async function installRoleTools(): Promise<RoleToolsRuntime> {
   const state = await loadState();
+  await saveState(state); // persists a newly minted worker secret before any credential is signed with it
 
   const mintToken = (parentRoleId: string): string => {
     const token = randomBytes(24).toString("base64url");
@@ -225,6 +251,29 @@ export async function installRoleTools(): Promise<RoleToolsRuntime> {
     }
     await saveState(state);
     return result;
+  };
+
+  const workerSignature = (agentId: string) => createHmac("sha256", state.workerSecret).update(`worker:${agentId}`).digest("base64url");
+  const workerMcpServer = (agentId: string): McpServerEntry => {
+    if (!state.port) throw new Error("The role plugin has no MCP port, so message_parent cannot be attached.");
+    return {
+      type: "http",
+      url: `http://127.0.0.1:${state.port}${WORKER_MCP_PATH}`,
+      headers: { authorization: `Bearer ${agentId}.${workerSignature(agentId)}` },
+      alwaysLoad: true,
+    };
+  };
+  const workerFor = (request: IncomingMessage): string => {
+    const header = request.headers.authorization ?? "";
+    const token = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
+    const split = token.lastIndexOf(".");
+    const agentId = split > 0 ? token.slice(0, split) : "";
+    const expected = Buffer.from(agentId ? workerSignature(agentId) : "");
+    const given = Buffer.from(split > 0 ? token.slice(split + 1) : "");
+    if (!agentId || expected.length !== given.length || !timingSafeEqual(expected, given)) {
+      throw new JsonRpcError(-32001, "Unrecognized worker credential.");
+    }
+    return agentId;
   };
 
   const grantFor = (request: IncomingMessage): Grant => {
@@ -302,6 +351,17 @@ export async function installRoleTools(): Promise<RoleToolsRuntime> {
     throw new JsonRpcError(-32601, `Unknown tool: ${name}`);
   };
 
+  const messageParent = async (childId: string, args: Record<string, unknown>) => {
+    const message = typeof args.message === "string" ? args.message.trim() : "";
+    if (!message) throw new Error("`message` is required: say what your parent needs to know.");
+    const paseo = requirePaseo();
+    const child = (await paseo.agents.ref(childId).refresh())?.agent;
+    const parentId = child?.labels[PARENT_AGENT_LABEL];
+    if (!parentId) throw new Error("This agent has no parent to message.");
+    await paseo.agents.ref(parentId).send(`Message from your subagent "${child.title || childId}" (agent ${childId}):\n\n${message}`);
+    return { delivered: true, parentAgentId: parentId };
+  };
+
   const handle = async (request: IncomingMessage, body: string): Promise<unknown | null> => {
     const message = JSON.parse(body) as {
       id?: string | number | null;
@@ -310,6 +370,7 @@ export async function installRoleTools(): Promise<RoleToolsRuntime> {
     };
     const id = message.id ?? null;
     const respond = (result: unknown) => ({ jsonrpc: "2.0", id, result });
+    const worker = request.url?.split("?")[0] === WORKER_MCP_PATH;
 
     if (message.method === "initialize") {
       return respond({
@@ -319,13 +380,17 @@ export async function installRoleTools(): Promise<RoleToolsRuntime> {
             : PROTOCOL_VERSION,
         capabilities: { tools: { listChanged: false } },
         serverInfo: { name: "paseo-role-orchestrator", version: "1.0.0" },
-        instructions:
-          "Delegate every child of a configured role with launch_role. It applies the role contract, provider, label, parent link and workspace placement that generic create_agent cannot.",
+        instructions: worker
+          ? "Use message_parent to reach the agent that launched you."
+          : "Delegate every child of a configured role with launch_role. It applies the role contract, provider, label, parent link and workspace placement that generic create_agent cannot.",
       });
     }
     if (message.method?.startsWith("notifications/")) return null;
     if (message.method === "ping") return respond({});
     if (message.method === "tools/list") {
+      if (worker) {
+        return respond({ tools: [{ name: "message_parent", description: MESSAGE_PARENT_DESCRIPTION, inputSchema: MESSAGE_PARENT_SCHEMA }] });
+      }
       return respond({
         tools: [
           { name: "launch_role", description: LAUNCH_DESCRIPTION, inputSchema: LAUNCH_SCHEMA },
@@ -338,11 +403,13 @@ export async function installRoleTools(): Promise<RoleToolsRuntime> {
       });
     }
     if (message.method === "tools/call") {
-      const grant = grantFor(request);
+      const workerId = worker ? workerFor(request) : null;
+      const grant = worker ? null : grantFor(request);
       const name = String(message.params?.name ?? "");
       const args = (message.params?.arguments ?? {}) as Record<string, unknown>;
       try {
-        const result = await callTool(grant, name, args);
+        if (worker && name !== "message_parent") throw new JsonRpcError(-32601, `Unknown tool: ${name}`);
+        const result = worker ? await messageParent(workerId!, args) : await callTool(grant!, name, args);
         return respond({
           content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
           structuredContent: result,
@@ -424,6 +491,7 @@ export async function installRoleTools(): Promise<RoleToolsRuntime> {
     connect: (paseo) => {
       paseoApi = paseo;
     },
+    workerMcpServer,
     launch: (paseo, request) => {
       paseoApi = paseo;
       return launch(paseo, request);
