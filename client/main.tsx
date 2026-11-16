@@ -57,7 +57,7 @@ const blankRole = (): RoleDraft => ({
   thinkingOptionId: null,
   modeId: null,
   systemPrompt: "",
-  delegation: { enabled: false, allowedRoleIds: [], childContexts: {}, completionGateEnabled: false }
+  delegation: { enabled: false, allowedRoleIds: [], childContexts: {}, completionGateEnabled: false, restrictChildCommunication: false }
 });
 
 type ProviderEntry = PaseoProviderSnapshotResult["entries"][number];
@@ -415,6 +415,18 @@ function RoleEditor({
               <View style={styles.grow}>
                 <Text style={styles.secondaryText}>Can invoke other roles</Text>
                 <Text style={styles.hint}>Only checked roles below may be launched as this role’s children.</Text>
+              </View>
+            </Pressable>
+            <Pressable
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: draft.delegation.restrictChildCommunication }}
+              onPress={() => update({ delegation: { ...draft.delegation, restrictChildCommunication: !draft.delegation.restrictChildCommunication } })}
+              style={[styles.choice, draft.delegation.restrictChildCommunication && styles.choiceSelected]}
+            >
+              <Icon name={draft.delegation.restrictChildCommunication ? "CheckSquare" : "Square"} size={18} color={draft.delegation.restrictChildCommunication ? theme.colors.accent : theme.colors.foregroundMuted} />
+              <View style={styles.grow}>
+                <Text style={styles.secondaryText}>Subagents can only message this agent</Text>
+                <Text style={styles.hint}>Every subagent must use the pi-worker provider (no Paseo tools) and gets one tool that messages this agent. Other providers are refused at creation. Applied when the agent launches.</Text>
               </View>
             </Pressable>
             {draft.delegation.enabled ? (
