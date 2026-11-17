@@ -99,6 +99,43 @@ A role with the setting on gets this section appended to its system prompt at la
 
 Checked on a throwaway 0.14 daemon: a refused `create_agent` over MCP leaves no agent record, no files, no workspace or worktree (an MCP `create_agent` places the child in the caller's existing workspace and has no worktree option), and starts no process, because the refusal happens before `createSession`. A refused creation from the app/CLI creation path leaves one failed creation receipt in `~/.paseo/creations/` (about 600 bytes plus a 64-byte claim file, the same ledger every creation writes, never pruned). The daemon also keeps one small in-memory entry (the agent's Paseo tool policy, set just before the hook runs) until restart; a plugin cannot clear it.
 
+## Re-reading the role contract after compaction
+
+The role setting **Re-read this prompt after compaction** (`rereadAfterCompaction`, default off, shown under the system prompt in the role editor) makes the plugin re-send the role contract to an agent after its context is compacted. Paseo has no compaction event, so the plugin looks for one when a turn ends (`agent.turn_ended`).
+
+- **Which agents:** any agent carrying the `paseo-role-orchestrator.role-id` label whose role currently has the setting on. The role is read at turn end, so the setting also applies to agents already running.
+- **Detection:** the plugin fetches the agent's timeline from the tail, paging back until it reaches a row at or before the stored position (no fixed row limit), and looks for a `compaction` item with `status: "completed"`. `loading` compactions are ignored; compaction items carry no id, so rows are identified by their timeline sequence number (`seqStart`).
+- **Dedupe:** per agent, the sequence number of the last compaction already answered is stored in `plugin-data/role-orchestrator-compaction.json`. Only a completed compaction with a higher sequence number triggers, and the number is stored before the message is sent, so a failed send is not retried on every later turn. The follow-up's own turn contains no compaction, so it cannot retrigger; a second compaction later triggers a second re-read. Storage survives plugin reloads.
+- **Follow-up:** `Your context was just compacted. Before anything else, re-read your role contract below and the files it tells you to read at start, then continue.` followed by the role's system prompt as the plugin builds it (`systemPromptForRole`, including the delegation catalog), sent with the normal agent send. Unlike launch-time capture, the current role text is used, so role edits are picked up.
+- **Limits:** Pi emits a completed compaction item even when `/compact` fails ("Nothing to compact"), which the plugin cannot tell apart, so a failed compaction also triggers a re-read; checked end to end on a throwaway agent. The check runs at the end of the turn in which the compaction happened, so a compaction that occurs while the agent is idle (for example a manual compaction outside any turn) is only noticed at the next turn end. An agent with no stored position and an old compaction in its history gets one re-read at its next turn end after the setting is switched on. A role with an empty prompt and no delegation sends nothing.
+
+## Periodic prompt
+
+The role setting **Send this prompt to the agent every N minutes** (`periodicPrompt: { enabled, minutes, prompt }`, default off, 30 minutes, shown under the compaction checkbox in the role editor) sends free text, such as a checklist, to every live agent of the role on a schedule. Minutes are 1 to 10080. The prompt is sent as written; no header is added.
+
+- **Which agents:** every agent carrying the `paseo-role-orchestrator.role-id` label of a role with the setting on and a non-empty prompt. Archived and `closed` agents are skipped, as are agents whose loop is paused (see below). The role is read on every pass, so edits and the on/off switch apply to running agents.
+- **Schedule:** a pass runs every 15 seconds. Each agent has an interval start: the moment the plugin first saw it, then the moment of its last send. The agent is due once `start + minutes` has passed, so changing the minutes takes effect on running agents immediately. A newly seen agent waits a full interval before its first prompt.
+- **Busy agents:** a prompt is only sent while the agent's status is `idle`; a running turn is never interrupted. A due agent that is busy simply stays due, which is the one pending prompt: however many intervals pass, it gets exactly one when it goes idle, and its interval then restarts. Nothing stacks.
+- **Persistence:** the interval starts are stored in `plugin-data/role-orchestrator-periodic.json` (agents no longer live are pruned), so a plugin or daemon reload continues the schedule; a prompt that came due during the downtime is sent once at the next pass.
+- **After a reload:** the daemon hands the plugin its own connection at load (`server.paseo`, present at runtime although missing from the 0.14 typings), so the timer runs straight after a plugin reload or daemon start with no agent event needed; verified live on 0.14.0. If a daemon ever omits it, the plugin falls back to the first lifecycle event or RPC (opening the role screen counts).
+
+## Pausing the periodic loop
+
+A periodic prompt keeps pinging an agent that has nothing to do. Two kinds of pause stop it, stored in `plugin-data/role-orchestrator-loop-pause.json` (so they survive plugin and daemon reloads):
+
+| Kind | Set by | Ends when |
+| --- | --- | --- |
+| agent pause (soft) | the agent's `pause_loop` tool | the agent gets any real prompt, or calls `resume_loop`, or the user resumes it |
+| user pause (hard) | the `/roles-pause-agent-loop` slash command on the agent being viewed | only `/roles-resume-agent-loop` (or the agent being archived or closed) |
+
+- **Agent tools:** every agent carrying the `paseo-role-orchestrator.role-id` label gets `pause_loop` and `resume_loop` from the plugin's own MCP endpoint (`/loop-mcp`, key `loop`, attached at `agent.session_open`, signed per agent like the worker credential, so they work for `pi-worker` agents too and for agents that were already running, which reopen once after a reload). On providers that cannot preapprove MCP tools the call follows the session's normal permission behavior. An agent cannot lift a user pause: `resume_loop` and `pause_loop` tell it the user holds the pause.
+- **Auto-resume:** when a turn starts for an agent in an agent pause, the plugin reads the newest user message in the timeline. Periodic prompts are sent with a message ID starting `role-orchestrator-periodic:` (Paseo keeps it on the row), so a turn that starts from the plugin's own ping never resumes the loop; any other prompt (the user, another agent, Paseo's child-finished notification, a completion-gate follow-up) does. If the timeline cannot be read the turn is treated as a real prompt. A pause begun after the turn started is left alone. A resumed loop starts a fresh interval instead of pinging at once.
+- **User pause ignores prompts:** real prompts, the agent's tools and the completion gate never end it.
+- **Slash commands:** `/roles-pause-agent-loop` and `/roles-resume-agent-loop` call the `roles.set-agent-loop-paused` RPC (`{ agentId, paused }`) for the agent being viewed. Only agents launched from a role have a loop; others get an error toast.
+- **Cleanup:** an agent's pause is dropped on `agent.archived` and `agent.closed`, and each scheduling pass drops pauses of agents that are archived, closed or no longer listed.
+- **Marker:** each pause and resume appends one quiet plugin row to the agent's timeline (`loop-state`). Note that Paseo's `timeline.append` bumps the agent's `updatedAt` (measured on 0.14.0: `updatedAt` moved on every append and `status` stayed `idle`; reads, refreshes and no-op commands did not move it). The markers are therefore written only when the state changes, never on a schedule. A periodic prompt turn bumps `updatedAt` as any turn does, which is why a looping agent never looks idle to anything that archives by `updatedAt`; pausing the loop is what lets it go idle.
+- **Role authors:** end the periodic prompt with `If there is nothing to do, call pause_loop.`
+
 ## Development
 
 ```bash

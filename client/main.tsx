@@ -57,6 +57,8 @@ const blankRole = (): RoleDraft => ({
   thinkingOptionId: null,
   modeId: null,
   systemPrompt: "",
+  rereadAfterCompaction: false,
+  periodicPrompt: { enabled: false, minutes: 30, prompt: "" },
   delegation: { enabled: false, allowedRoleIds: [], childContexts: {}, completionGateEnabled: false, restrictChildCommunication: false }
 });
 
@@ -389,6 +391,42 @@ function RoleEditor({
           <View>
             <Text style={styles.label}>System / role prompt</Text>
             <TextInput value={draft.systemPrompt} onChangeText={(systemPrompt) => update({ systemPrompt })} multiline textAlignVertical="top" placeholder="Persistent instructions for every agent launched with this role." placeholderTextColor={theme.colors.foregroundMuted} style={[styles.input, { minHeight: 150 }]} />
+          </View>
+          <Pressable
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: draft.rereadAfterCompaction }}
+            onPress={() => update({ rereadAfterCompaction: !draft.rereadAfterCompaction })}
+            style={[styles.choice, draft.rereadAfterCompaction && styles.choiceSelected]}
+          >
+            <Icon name={draft.rereadAfterCompaction ? "CheckSquare" : "Square"} size={18} color={draft.rereadAfterCompaction ? theme.colors.accent : theme.colors.foregroundMuted} />
+            <View style={styles.grow}>
+              <Text style={styles.secondaryText}>Re-read this prompt after compaction</Text>
+              <Text style={styles.hint}>When an agent’s context is compacted, it is sent this role’s prompt again and told to re-read the files it names. Checked when the agent’s turn ends; applies to running agents too.</Text>
+            </View>
+          </Pressable>
+          <View style={[styles.choice, draft.periodicPrompt.enabled && styles.choiceSelected, { flexDirection: "column", alignItems: "stretch" }]}>
+            <Pressable
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: draft.periodicPrompt.enabled }}
+              onPress={() => update({ periodicPrompt: { ...draft.periodicPrompt, enabled: !draft.periodicPrompt.enabled } })}
+              style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
+            >
+              <Icon name={draft.periodicPrompt.enabled ? "CheckSquare" : "Square"} size={18} color={draft.periodicPrompt.enabled ? theme.colors.accent : theme.colors.foregroundMuted} />
+              <Text style={styles.secondaryText}>Send this prompt to the agent every</Text>
+              <TextInput
+                accessibilityLabel="Minutes between prompts"
+                value={String(draft.periodicPrompt.minutes)}
+                onChangeText={(text) => {
+                  const minutes = Math.min(10080, Math.max(1, Math.floor(Number(text.replace(/\D/g, "")) || 1)));
+                  update({ periodicPrompt: { ...draft.periodicPrompt, minutes } });
+                }}
+                keyboardType="number-pad"
+                style={[styles.input, { width: 72, textAlign: "center" }]}
+              />
+              <Text style={styles.secondaryText}>minutes</Text>
+            </Pressable>
+            <TextInput value={draft.periodicPrompt.prompt} onChangeText={(prompt) => update({ periodicPrompt: { ...draft.periodicPrompt, prompt } })} multiline textAlignVertical="top" placeholder="What to tell the agent each time, for example a list of things to check. End with: If there is nothing to do, call pause_loop." placeholderTextColor={theme.colors.foregroundMuted} style={[styles.input, { minHeight: 90 }]} />
+            <Text style={styles.hint}>Sent to each running agent with this role. If the agent is busy it waits for the turn to finish, and at most one is ever pending. Archived or closed agents are skipped.</Text>
           </View>
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Completion</Text>

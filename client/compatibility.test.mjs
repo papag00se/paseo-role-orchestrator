@@ -45,6 +45,7 @@ registerHooks({
 });
 const {default:contribute} = await import('../index.client.tsx');
 const {RoleCatalogSurface,RoleWorkspacePanel,RoleAgentPanel} = await import('./main.tsx');
+const {LoopStateRow} = await import('./loop-state-row.tsx');
 function nodes(tree) {
   if (!tree || typeof tree!=='object') return [];
   if (Array.isArray(tree)) return tree.flatMap(nodes);
@@ -52,8 +53,8 @@ function nodes(tree) {
 }
 
 test('current client entry preserves settings, contextual panels and settings action', () => {
-  const settings=[], panels=[], commands=[];
-  const cleanup=contribute({addSettingsScreen:x=>settings.push(x),addWorkspacePanel:x=>panels.push(x),addCommandCenterItem:x=>commands.push(x)});
+  const settings=[], panels=[], commands=[], slash=[], renderers=[];
+  const cleanup=contribute({addSettingsScreen:x=>settings.push(x),addWorkspacePanel:x=>panels.push(x),addCommandCenterItem:x=>commands.push(x),addSlashCommand:x=>slash.push(x),addTimelineRenderer:x=>renderers.push(x)});
   assert.deepEqual(settings.map(x=>x.id),['roles','completion-gate']);
   assert.equal(settings[0].Component,RoleCatalogSurface);
   assert.deepEqual(panels.map(x=>[x.id,x.context]),[['roles-workspace','workspace'],['roles-agent','agent']]);
@@ -63,6 +64,13 @@ test('current client entry preserves settings, contextual panels and settings ac
   commands[0].onSelect({openSettings:id=>opened=id});
   assert.equal(opened,'roles');
   cleanup();
+  assert.deepEqual(slash.map(x=>[x.name,x.context]),[['roles-pause-agent-loop','agent'],['roles-resume-agent-loop','agent']]);
+  const calls=[];
+  for (const command of slash) command.onSubmit({agent:{id:'a1'},args:'',rpc:async(contract,input)=>{calls.push([contract.name,input]);return {};}});
+  assert.deepEqual(calls,[['roles.set-agent-loop-paused',{agentId:'a1',paused:true}],['roles.set-agent-loop-paused',{agentId:'a1',paused:false}]]);
+  assert.deepEqual(renderers.map(x=>[x.kind,x.version]),[['loop-state',1]]);
+  const theme={colors:{foregroundMuted:'m'}}, layout={compact:false};
+  assert.equal(nodes(LoopStateRow({item:{data:{text:'Paused'}},theme,layout})).at(-1).props.children,'Paused');
 });
 
 test('role editor uses one host scroll owner and sheet-aware inputs in wide and compact layouts', () => {
@@ -74,7 +82,7 @@ test('role editor uses one host scroll owner and sheet-aware inputs in wide and 
     const form=nodes(editor.type({...editor.props,open:true}));
     assert.equal(form.filter(x=>x.type==='ModalContent').length,1);
     assert.equal(form.filter(x=>['HostScrollView','NativeScrollView'].includes(x.type)).length,0,'Modal.Content owns vertical scrolling');
-    assert.equal(form.filter(x=>x.type==='HostTextInput').length,3,'name, description and role prompt use sheet-aware inputs');
+    assert.equal(form.filter(x=>x.type==='HostTextInput').length,5,'name, description, role prompt, periodic minutes and periodic prompt use sheet-aware inputs');
     assert.equal(form.filter(x=>x.type==='NativeTextInput').length,0);
     assert.ok(form.filter(x=>x.type==='Text').every(x=>x.props.style),'text remains theme styled');
   }
