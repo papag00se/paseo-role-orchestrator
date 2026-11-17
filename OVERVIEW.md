@@ -7,3 +7,5 @@ Role instructions and the chosen parent context are sent to each agent's configu
 A role can optionally restrict its subagents so they must run on a Paseo-tool-free `pi-worker` provider and can only message their parent. Setup of that provider is in the reference.
 
 A role can optionally re-send its prompt to an agent after that agent's context is compacted, so the agent re-reads its instructions. This sends the role prompt to the agent's provider as a normal follow-up message.
+
+A role can optionally send a prompt of your choosing to each of its running agents every N minutes. The prompt text goes to the agent's provider as a normal message and uses its quota.

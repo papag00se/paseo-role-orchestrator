@@ -80,6 +80,7 @@ export async function addRole(draft: RoleDraft) {
         restrictChildCommunication: draft.delegation.restrictChildCommunication,
       },
       rereadAfterCompaction: draft.rereadAfterCompaction,
+      periodicPrompt: draft.periodicPrompt,
       createdAt: now,
       updatedAt: now,
     });
@@ -111,6 +112,7 @@ export async function editRole(input: RoleDraft & { id: string }) {
         restrictChildCommunication: input.delegation.restrictChildCommunication,
       },
       rereadAfterCompaction: input.rereadAfterCompaction,
+      periodicPrompt: input.periodicPrompt,
       createdAt: prior.createdAt,
       updatedAt: new Date().toISOString(),
     });

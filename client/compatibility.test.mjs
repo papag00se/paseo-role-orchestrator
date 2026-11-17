@@ -74,7 +74,7 @@ test('role editor uses one host scroll owner and sheet-aware inputs in wide and 
     const form=nodes(editor.type({...editor.props,open:true}));
     assert.equal(form.filter(x=>x.type==='ModalContent').length,1);
     assert.equal(form.filter(x=>['HostScrollView','NativeScrollView'].includes(x.type)).length,0,'Modal.Content owns vertical scrolling');
-    assert.equal(form.filter(x=>x.type==='HostTextInput').length,3,'name, description and role prompt use sheet-aware inputs');
+    assert.equal(form.filter(x=>x.type==='HostTextInput').length,5,'name, description, role prompt, periodic minutes and periodic prompt use sheet-aware inputs');
     assert.equal(form.filter(x=>x.type==='NativeTextInput').length,0);
     assert.ok(form.filter(x=>x.type==='Text').every(x=>x.props.style),'text remains theme styled');
   }

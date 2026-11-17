@@ -28,6 +28,7 @@
 | 🌳 Visible hierarchy | Parents, children and helper agents show up in the normal workspace |
 | 🔒 Parent-only subagents | Optional per-role setting: subagents must be `pi-worker` and can only message their parent |
 | 🔁 Re-read after compaction | Optional per-role setting: after a context compaction the agent is sent its role contract again |
+| ⏰ Periodic prompt | Optional per-role setting: send a prompt to every live agent of the role every N minutes, queued while it is busy |
 | ✅ Completion gate | An independent judge model checks finished turns (original plugin) |
 
 ## How it fits

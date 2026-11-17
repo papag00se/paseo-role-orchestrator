@@ -35,6 +35,12 @@ export const RoleSchema = z.object({
   }),
   /** After a context compaction, send the agent its role contract again. Checked when a turn ends. */
   rereadAfterCompaction: z.boolean().default(false),
+  /** Send `prompt` to every live agent of this role every `minutes` minutes, queued while the agent is busy. */
+  periodicPrompt: z.object({
+    enabled: z.boolean(),
+    minutes: z.number().int().min(1).max(10_080),
+    prompt: z.string().max(8_000),
+  }).default({ enabled: false, minutes: 30, prompt: "" }),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
