@@ -425,7 +425,7 @@ function RoleEditor({
               />
               <Text style={styles.secondaryText}>minutes</Text>
             </Pressable>
-            <TextInput value={draft.periodicPrompt.prompt} onChangeText={(prompt) => update({ periodicPrompt: { ...draft.periodicPrompt, prompt } })} multiline textAlignVertical="top" placeholder="What to tell the agent each time, for example a list of things to check." placeholderTextColor={theme.colors.foregroundMuted} style={[styles.input, { minHeight: 90 }]} />
+            <TextInput value={draft.periodicPrompt.prompt} onChangeText={(prompt) => update({ periodicPrompt: { ...draft.periodicPrompt, prompt } })} multiline textAlignVertical="top" placeholder="What to tell the agent each time, for example a list of things to check. End with: If there is nothing to do, call pause_loop." placeholderTextColor={theme.colors.foregroundMuted} style={[styles.input, { minHeight: 90 }]} />
             <Text style={styles.hint}>Sent to each running agent with this role. If the agent is busy it waits for the turn to finish, and at most one is ever pending. Archived or closed agents are skipped.</Text>
           </View>
           <View style={styles.section}>

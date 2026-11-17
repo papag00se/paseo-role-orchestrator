@@ -9,3 +9,5 @@ A role can optionally restrict its subagents so they must run on a Paseo-tool-fr
 A role can optionally re-send its prompt to an agent after that agent's context is compacted, so the agent re-reads its instructions. This sends the role prompt to the agent's provider as a normal follow-up message.
 
 A role can optionally send a prompt of your choosing to each of its running agents every N minutes. The prompt text goes to the agent's provider as a normal message and uses its quota.
+
+A looping agent can stop its periodic prompts when it has nothing to do (`pause_loop`) and is woken by any real prompt. You can also pause and resume an agent's loop with the `/roles-pause-agent-loop` and `/roles-resume-agent-loop` slash commands; a pause you set is only lifted by you. Each pause or resume adds one small line to the agent's timeline. Role prompts should end a periodic prompt with: If there is nothing to do, call pause_loop.

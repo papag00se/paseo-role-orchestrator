@@ -29,6 +29,7 @@
 | 🔒 Parent-only subagents | Optional per-role setting: subagents must be `pi-worker` and can only message their parent |
 | 🔁 Re-read after compaction | Optional per-role setting: after a context compaction the agent is sent its role contract again |
 | ⏰ Periodic prompt | Optional per-role setting: send a prompt to every live agent of the role every N minutes, queued while it is busy |
+| ⏸️ Pause the loop | `pause_loop` / `resume_loop` agent tools (any real prompt wakes the agent) and `/roles-pause-agent-loop` / `/roles-resume-agent-loop` for a pause only you can lift |
 | ✅ Completion gate | An independent judge model checks finished turns (original plugin) |
 
 ## How it fits

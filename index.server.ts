@@ -5,6 +5,8 @@ import { installPeriodicPrompts } from "./server/periodic-prompts";
 import { installCompactionReread } from "./server/compaction-reread";
 import { installChildPolicy } from "./server/child-policy";
 import { installRoleTools } from "./server/role-tools";
+import { installLoopControl, setByUser } from "./server/loop-control";
+import { setAgentLoopPaused } from "./shared/loop-pause";
 import { createRole, deleteRole, getCompletionGateSettings as getCompletionGateSettingsRpc, launchRoleRpc, listRoles, saveCompletionGateSettings as saveCompletionGateSettingsRpc, updateRole } from "./shared/roles";
 
 export default function contribute(server: PluginServerContext) {
@@ -15,6 +17,8 @@ export default function contribute(server: PluginServerContext) {
   server.handle(deleteRole, removeRole);
   server.handle(getCompletionGateSettingsRpc, getCompletionGateSettings);
   server.handle(saveCompletionGateSettingsRpc, saveCompletionGateSettings);
+
+  server.handle(setAgentLoopPaused, ({ agentId, paused }, context) => setByUser(context.paseo, agentId, paused));
 
   // Every launch path routes through one runtime so a role run is identical however it started.
   const tools = installRoleTools();
@@ -41,12 +45,14 @@ export default function contribute(server: PluginServerContext) {
   // The completion gate judges every finished turn of a gate-enabled role; a yielded or
   // progress-only turn is sent back to work instead of being accepted as completion.
   const removeChildPolicy = installChildPolicy(server, tools);
+  const removeLoopControl = installLoopControl(server, tools);
 
   const removeCompletionGate = installCompletionGate(server);
   const removeCompactionReread = installCompactionReread(server);
   return () => {
     periodic.close();
     removeChildPolicy();
+    removeLoopControl();
     removeCompactionReread();
     removeCompletionGate();
     removeConnectors.forEach((remove) => remove());
