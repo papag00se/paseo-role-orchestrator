@@ -117,7 +117,7 @@ The role setting **Send this prompt to the agent every N minutes** (`periodicPro
 - **Schedule:** a pass runs every 15 seconds. Each agent has an interval start: the moment the plugin first saw it, then the moment of its last send. The agent is due once `start + minutes` has passed, so changing the minutes takes effect on running agents immediately. A newly seen agent waits a full interval before its first prompt.
 - **Busy agents:** a prompt is only sent while the agent's status is `idle`; a running turn is never interrupted. A due agent that is busy simply stays due, which is the one pending prompt: however many intervals pass, it gets exactly one when it goes idle, and its interval then restarts. Nothing stacks.
 - **Persistence:** the interval starts are stored in `plugin-data/role-orchestrator-periodic.json` (agents no longer live are pruned), so a plugin or daemon reload continues the schedule; a prompt that came due during the downtime is sent once at the next pass.
-- **Limit:** the plugin only receives a daemon connection from a lifecycle event or an RPC (opening the role screen counts), so after a reload prompts resume at the first agent event or role-screen visit rather than immediately.
+- **After a reload:** the daemon hands the plugin its own connection at load (`server.paseo`, present at runtime although missing from the 0.14 typings), so the timer runs straight after a plugin reload or daemon start with no agent event needed; verified live on 0.14.0. If a daemon ever omits it, the plugin falls back to the first lifecycle event or RPC (opening the role screen counts).
 
 ## Development
 

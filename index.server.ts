@@ -26,6 +26,14 @@ export default function contribute(server: PluginServerContext) {
 
   // The agent-facing MCP tools need a daemon connection, and a reload leaves them without one
   // until some hook or RPC hands us it. Any lifecycle event is enough to reconnect.
+  // Newer daemons hand the plugin its own connection at load (`server.paseo`; absent from the 0.14
+  // typings), so the periodic prompts and role tools work straight after a reload or daemon start.
+  // Without it, the first lifecycle event or RPC below connects them instead.
+  const loadTimeApi = (server as { paseo?: Parameters<typeof periodic.connect>[0] }).paseo;
+  if (loadTimeApi) {
+    periodic.connect(loadTimeApi);
+    void tools.then((runtime) => runtime.connect(loadTimeApi));
+  }
   const removeConnectors = (["agent.created", "agent.turn_started", "agent.turn_ended", "agent.archived"] as const).map((name) =>
     server.on(name, async (_event, { paseo }) => { periodic.connect(paseo); (await tools).connect(paseo); }),
   );
