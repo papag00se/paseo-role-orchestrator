@@ -99,6 +99,16 @@ A role with the setting on gets this section appended to its system prompt at la
 
 Checked on a throwaway 0.14 daemon: a refused `create_agent` over MCP leaves no agent record, no files, no workspace or worktree (an MCP `create_agent` places the child in the caller's existing workspace and has no worktree option), and starts no process, because the refusal happens before `createSession`. A refused creation from the app/CLI creation path leaves one failed creation receipt in `~/.paseo/creations/` (about 600 bytes plus a 64-byte claim file, the same ledger every creation writes, never pruned). The daemon also keeps one small in-memory entry (the agent's Paseo tool policy, set just before the hook runs) until restart; a plugin cannot clear it.
 
+## Re-reading the role contract after compaction
+
+The role setting **Re-read this prompt after compaction** (`rereadAfterCompaction`, default off, shown under the system prompt in the role editor) makes the plugin re-send the role contract to an agent after its context is compacted. Paseo has no compaction event, so the plugin looks for one when a turn ends (`agent.turn_ended`).
+
+- **Which agents:** any agent carrying the `paseo-role-orchestrator.role-id` label whose role currently has the setting on. The role is read at turn end, so the setting also applies to agents already running.
+- **Detection:** the plugin fetches the agent's timeline from the tail, paging back until it reaches a row at or before the stored position (no fixed row limit), and looks for a `compaction` item with `status: "completed"`. `loading` compactions are ignored; compaction items carry no id, so rows are identified by their timeline sequence number (`seqStart`).
+- **Dedupe:** per agent, the sequence number of the last compaction already answered is stored in `plugin-data/role-orchestrator-compaction.json`. Only a completed compaction with a higher sequence number triggers, and the number is stored before the message is sent, so a failed send is not retried on every later turn. The follow-up's own turn contains no compaction, so it cannot retrigger; a second compaction later triggers a second re-read. Storage survives plugin reloads.
+- **Follow-up:** `Your context was just compacted. Before anything else, re-read your role contract below and the files it tells you to read at start, then continue.` followed by the role's system prompt as the plugin builds it (`systemPromptForRole`, including the delegation catalog), sent with the normal agent send. Unlike launch-time capture, the current role text is used, so role edits are picked up.
+- **Limits:** the check runs at the end of the turn in which the compaction happened, so a compaction that occurs while the agent is idle (for example a manual compaction outside any turn) is only noticed at the next turn end. An agent with no stored position and an old compaction in its history gets one re-read at its next turn end after the setting is switched on. A role with an empty prompt and no delegation sends nothing.
+
 ## Development
 
 ```bash

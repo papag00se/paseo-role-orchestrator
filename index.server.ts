@@ -1,6 +1,7 @@
 import type { PluginServerContext } from "@getpaseo/plugin/server";
 import { getCompletionGateSettings, installCompletionGate, saveCompletionGateSettings } from "./server/completion-gate";
 import { addRole, editRole, getRoles, removeRole } from "./server/roles";
+import { installCompactionReread } from "./server/compaction-reread";
 import { installChildPolicy } from "./server/child-policy";
 import { installRoleTools } from "./server/role-tools";
 import { createRole, deleteRole, getCompletionGateSettings as getCompletionGateSettingsRpc, launchRoleRpc, listRoles, saveCompletionGateSettings as saveCompletionGateSettingsRpc, updateRole } from "./shared/roles";
@@ -31,8 +32,10 @@ export default function contribute(server: PluginServerContext) {
   const removeChildPolicy = installChildPolicy(server, tools);
 
   const removeCompletionGate = installCompletionGate(server);
+  const removeCompactionReread = installCompactionReread(server);
   return () => {
     removeChildPolicy();
+    removeCompactionReread();
     removeCompletionGate();
     removeConnectors.forEach((remove) => remove());
     void tools.then((runtime) => runtime.close()).catch(() => undefined);

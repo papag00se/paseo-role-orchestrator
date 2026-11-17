@@ -57,6 +57,7 @@ const blankRole = (): RoleDraft => ({
   thinkingOptionId: null,
   modeId: null,
   systemPrompt: "",
+  rereadAfterCompaction: false,
   delegation: { enabled: false, allowedRoleIds: [], childContexts: {}, completionGateEnabled: false, restrictChildCommunication: false }
 });
 
@@ -390,6 +391,18 @@ function RoleEditor({
             <Text style={styles.label}>System / role prompt</Text>
             <TextInput value={draft.systemPrompt} onChangeText={(systemPrompt) => update({ systemPrompt })} multiline textAlignVertical="top" placeholder="Persistent instructions for every agent launched with this role." placeholderTextColor={theme.colors.foregroundMuted} style={[styles.input, { minHeight: 150 }]} />
           </View>
+          <Pressable
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: draft.rereadAfterCompaction }}
+            onPress={() => update({ rereadAfterCompaction: !draft.rereadAfterCompaction })}
+            style={[styles.choice, draft.rereadAfterCompaction && styles.choiceSelected]}
+          >
+            <Icon name={draft.rereadAfterCompaction ? "CheckSquare" : "Square"} size={18} color={draft.rereadAfterCompaction ? theme.colors.accent : theme.colors.foregroundMuted} />
+            <View style={styles.grow}>
+              <Text style={styles.secondaryText}>Re-read this prompt after compaction</Text>
+              <Text style={styles.hint}>When an agent’s context is compacted, it is sent this role’s prompt again and told to re-read the files it names. Checked when the agent’s turn ends; applies to running agents too.</Text>
+            </View>
+          </Pressable>
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Completion</Text>
             <Pressable

@@ -33,6 +33,8 @@ export const RoleSchema = z.object({
     /** Subagents this role's agents create must use the worker provider and may only message their parent. */
     restrictChildCommunication: z.boolean().default(false),
   }),
+  /** After a context compaction, send the agent its role contract again. Checked when a turn ends. */
+  rereadAfterCompaction: z.boolean().default(false),
   createdAt: z.string(),
   updatedAt: z.string(),
 });

@@ -5,3 +5,5 @@ Requires Paseo 0.14 through 0.16. Create roles in the plugin settings, choose th
 Role instructions and the chosen parent context are sent to each agent's configured provider. When enabled, the completion gate also sends conversation evidence to its judge provider and can send a follow-up to the agent. Agents and judges consume provider quota. Role delegation rules apply to the plugin's role tools; provider-native agent creation is outside those rules.
 
 A role can optionally restrict its subagents so they must run on a Paseo-tool-free `pi-worker` provider and can only message their parent. Setup of that provider is in the reference.
+
+A role can optionally re-send its prompt to an agent after that agent's context is compacted, so the agent re-reads its instructions. This sends the role prompt to the agent's provider as a normal follow-up message.

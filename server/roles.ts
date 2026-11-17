@@ -79,6 +79,7 @@ export async function addRole(draft: RoleDraft) {
         completionGateEnabled: draft.delegation.completionGateEnabled,
         restrictChildCommunication: draft.delegation.restrictChildCommunication,
       },
+      rereadAfterCompaction: draft.rereadAfterCompaction,
       createdAt: now,
       updatedAt: now,
     });
@@ -109,6 +110,7 @@ export async function editRole(input: RoleDraft & { id: string }) {
         completionGateEnabled: input.delegation.completionGateEnabled,
         restrictChildCommunication: input.delegation.restrictChildCommunication,
       },
+      rereadAfterCompaction: input.rereadAfterCompaction,
       createdAt: prior.createdAt,
       updatedAt: new Date().toISOString(),
     });

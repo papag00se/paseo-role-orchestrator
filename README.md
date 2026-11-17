@@ -27,6 +27,7 @@
 | 🛠️ Role-aware tools | `list_roles` and `launch_role` only offer what the caller is allowed |
 | 🌳 Visible hierarchy | Parents, children and helper agents show up in the normal workspace |
 | 🔒 Parent-only subagents | Optional per-role setting: subagents must be `pi-worker` and can only message their parent |
+| 🔁 Re-read after compaction | Optional per-role setting: after a context compaction the agent is sent its role contract again |
 | ✅ Completion gate | An independent judge model checks finished turns (original plugin) |
 
 ## How it fits
