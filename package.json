@@ -1,6 +1,6 @@
 {
   "name": "@papagoose/role-orchestrator",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Define reusable agent roles, control delegation, and optionally assess completion in Paseo.",
   "repository": {
     "type": "git",

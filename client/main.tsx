@@ -16,13 +16,10 @@ import { buildRoleRunTree, COMPLETION_AGENT_LABEL, fetchRoleAgents, PARENT_AGENT
 import {
   createRole,
   deleteRole,
-  getCompletionGateSettings,
   launchRoleRpc,
   listRoles,
   ROLE_LABEL,
   providerModel,
-  saveCompletionGateSettings,
-  type CompletionGateSettings,
   updateRole,
   type Role,
   type RoleDraft,
@@ -74,11 +71,6 @@ function useProviderCatalog() {
     queryFn: async () => (await paseo.providers.snapshot()).entries,
     staleTime: 30_000,
   });
-}
-
-function useCompletionGateSettings(hostId: string) {
-  const get = useRpc(getCompletionGateSettings);
-  return useQuery({ queryKey: ["role-orchestrator", hostId, "completion-gate"], queryFn: () => get({}) });
 }
 
 function useRoles(hostId: string) {
@@ -270,7 +262,6 @@ function RoleEditor({
   open,
   role,
   roles,
-  completionGateReady,
   theme,
   styles,
   onOpenChange,
@@ -279,7 +270,6 @@ function RoleEditor({
   open: boolean;
   role: Role | null;
   roles: Role[];
-  completionGateReady: boolean;
   theme: PluginSurfaceProps["theme"];
   styles: ReturnType<typeof stylesFor>;
   onOpenChange: (open: boolean) => void;
@@ -432,13 +422,12 @@ function RoleEditor({
             <Text style={styles.sectionTitle}>Completion</Text>
             <Pressable
               accessibilityRole="checkbox"
-              accessibilityState={{ checked: draft.delegation.completionGateEnabled, disabled: !completionGateReady }}
-              disabled={!completionGateReady}
+              accessibilityState={{ checked: draft.delegation.completionGateEnabled }}
               onPress={() => update({ delegation: { ...draft.delegation, completionGateEnabled: !draft.delegation.completionGateEnabled } })}
-              style={[styles.choice, draft.delegation.completionGateEnabled && styles.choiceSelected, !completionGateReady && { opacity: 0.55 }]}
+              style={[styles.choice, draft.delegation.completionGateEnabled && styles.choiceSelected]}
             >
               <Icon name={draft.delegation.completionGateEnabled ? "CheckSquare" : "Square"} size={18} color={draft.delegation.completionGateEnabled ? theme.colors.accent : theme.colors.foregroundMuted} />
-              <View style={styles.grow}><Text style={styles.secondaryText}>Enable completion gate</Text><Text style={styles.hint}>{completionGateReady ? "Run the configured independent completion check after every completed turn." : "To use this feature, open settings and set your completion gate model."}</Text></View>
+              <View style={styles.grow}><Text style={styles.secondaryText}>Check completion of the whole ask</Text><Text style={styles.hint}>Juke judges every completed turn of this role on the whole user ask and sends it back to work if anything runnable remains. Requires the Juke plugin; set its judge under Juke's "Strict judge model".</Text></View>
             </Pressable>
           </View>
           <View style={styles.section}>
@@ -516,49 +505,9 @@ function RoleCard({ role, theme, styles, onEdit, onDelete }: { role: Role; theme
   );
 }
 
-function CompletionGateSettingsCard({ hostId, theme, styles }: { hostId: string; theme: PluginSurfaceProps["theme"]; styles: ReturnType<typeof stylesFor> }) {
-  const queryClient = useQueryClient();
-  const toast = useToast();
-  const settingsQuery = useCompletionGateSettings(hostId);
-  const save = useRpc(saveCompletionGateSettings);
-  const catalog = useProviderCatalog();
-  const [draft, setDraft] = useState<CompletionGateSettings | null>(null);
-  useEffect(() => { if (settingsQuery.data) setDraft(settingsQuery.data); }, [settingsQuery.data]);
-  if (!draft) return settingsQuery.isError
-    ? <Text accessibilityRole="alert" style={styles.dangerText}>Could not load completion gate settings: {settingsQuery.error.message}</Text>
-    : <ActivityIndicator color={theme.colors.accent} />;
-  const providers = (catalog.data ?? []).filter((entry) => entry.enabled && (entry.status === "ready" || entry.provider === draft.provider));
-  const provider = providers.find((entry) => entry.provider === draft.provider);
-  const models = (provider?.models ?? []).filter((model) => model.isSelectable !== false);
-  const providerOptions = providers.map((entry) => ({ id: entry.provider, label: entry.label ?? entry.provider, description: entry.description ?? entry.provider }));
-  const modelOptions = models.map((model) => ({ id: model.id, label: model.label, description: model.description ?? model.id }));
-  const thinkingOptions = (models.find((model) => model.id === draft.model)?.thinkingOptions ?? []).map((option) => ({ id: option.id, label: option.label, description: option.description ?? option.id }));
-  const saveDraft = async () => {
-    try {
-      await save(draft);
-      await queryClient.invalidateQueries({ queryKey: ["role-orchestrator", hostId, "completion-gate"] });
-      toast.show("Completion gate settings saved", { variant: "success" });
-    } catch (error) { toast.error(error instanceof Error ? error.message : "Unable to save completion gate settings"); }
-  };
-  return <View style={styles.card}>
-    <View style={styles.header}><Text style={[styles.name, styles.grow]}>Completion gate settings</Text><Button label="Save completion gate" kind="primary" onPress={() => void saveDraft()} theme={theme} styles={styles} icon="Save" /></View>
-    <Text style={styles.detail}>The gate checks user requests, clarification exchanges, and assistant responses against workspace evidence. Oversized evidence is summarized separately using the judge model; the Supervisor is never asked to summarize.</Text>
-    <Picker label="Provider" value={draft.provider || null} options={providerOptions} placeholder="Choose a provider" emptyMessage="No ready providers are available." theme={theme} styles={styles} onSelect={(providerId) => setDraft({ ...draft, provider: providerId ?? "", model: "", thinkingOptionId: null })} />
-    <Picker label="Model" value={draft.model || null} options={modelOptions} placeholder={draft.provider ? "Choose a model" : "Choose a provider first"} emptyMessage="No selectable models are available." theme={theme} styles={styles} onSelect={(modelId) => { const model = models.find((candidate) => candidate.id === modelId); setDraft({ ...draft, model: modelId ?? "", thinkingOptionId: model?.defaultThinkingOptionId ?? null }); }} />
-    <Picker label="Reasoning level" value={draft.thinkingOptionId} options={thinkingOptions} placeholder="Use provider default" emptyMessage="This model does not expose reasoning levels." theme={theme} styles={styles} onSelect={(thinkingOptionId) => setDraft({ ...draft, thinkingOptionId })} />
-    <View><Text style={styles.label}>Gate prompt</Text><TextInput value={draft.prompt} onChangeText={(prompt) => setDraft({ ...draft, prompt })} multiline textAlignVertical="top" style={[styles.input, { minHeight: 160 }]} /></View>
-  </View>;
-}
-
-export function CompletionGateSettingsPage({ theme, host, layout }: PluginSurfaceProps) {
-  const styles = useMemo(() => stylesFor(theme, layout.compact), [layout.compact, theme]);
-  return <View style={styles.content}><CompletionGateSettingsCard hostId={host.id} theme={theme} styles={styles} /></View>;
-}
-
 export function RoleCatalogSurface({ theme, host, layout }: PluginSurfaceProps) {
   const styles = useMemo(() => stylesFor(theme, layout.compact), [layout.compact, theme]);
   const rolesQuery = useRoles(host.id);
-  const completionGate = useCompletionGateSettings(host.id);
   const mutations = useRoleMutations(host.id);
   const [editing, setEditing] = useState<Role | "new" | null>(null);
   const roles = rolesQuery.data ?? [];
@@ -583,7 +532,6 @@ export function RoleCatalogSurface({ theme, host, layout }: PluginSurfaceProps) 
         open={editing !== null}
         role={editing === "new" ? null : editing}
         roles={roles}
-        completionGateReady={Boolean(completionGate.data?.provider && completionGate.data?.model)}
         theme={theme}
         styles={styles}
         onOpenChange={(open) => !open && setEditing(null)}

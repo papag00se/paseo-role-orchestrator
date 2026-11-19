@@ -68,26 +68,6 @@ export const updateRole = defineRpc({
   output: z.object({ role: RoleSchema }),
 });
 
-export const CompletionGateSettingsSchema = z.object({
-  provider: z.string().trim().max(160),
-  model: z.string().trim().max(240),
-  thinkingOptionId: z.string().trim().max(160).nullable(),
-  modeId: z.string().trim().max(160).nullable(),
-  prompt: z.string().max(32_000),
-});
-export type CompletionGateSettings = z.infer<typeof CompletionGateSettingsSchema>;
-
-export const getCompletionGateSettings = defineRpc({
-  name: "completion-gate.get",
-  input: z.object({}),
-  output: CompletionGateSettingsSchema,
-});
-export const saveCompletionGateSettings = defineRpc({
-  name: "completion-gate.save",
-  input: CompletionGateSettingsSchema,
-  output: CompletionGateSettingsSchema,
-});
-
 export const launchRoleRpc = defineRpc({
   name: "roles.launch",
   input: z.object({
