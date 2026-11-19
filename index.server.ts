@@ -6,7 +6,8 @@ import { installChildPolicy } from "./server/child-policy";
 import { installRoleTools } from "./server/role-tools";
 import { installLoopControl, setByUser } from "./server/loop-control";
 import { setAgentLoopPaused } from "./shared/loop-pause";
-import { createRole, deleteRole, launchRoleRpc, listRoles, updateRole } from "./shared/roles";
+import { createRole, deleteRole, getCompletionJudge as getCompletionJudgeRpc, launchRoleRpc, listRoles, saveCompletionJudge as saveCompletionJudgeRpc, updateRole } from "./shared/roles";
+import { getCompletionJudge, saveCompletionJudge } from "./server/completion-judge";
 
 export default function contribute(server: PluginServerContext) {
   const periodic = installPeriodicPrompts();
@@ -14,7 +15,13 @@ export default function contribute(server: PluginServerContext) {
   server.handle(createRole, addRole);
   server.handle(updateRole, editRole);
   server.handle(deleteRole, removeRole);
-  // Completion checking for gated roles is done by Juke's strict profile.
+  // Completion checking for gated roles is done by Juke's strict profile, with this plugin's judge.
+  server.handle(getCompletionJudgeRpc, getCompletionJudge);
+  server.handle(saveCompletionJudgeRpc, async (input) => {
+    const saved = await saveCompletionJudge(input);
+    await publishJukeProfiles();
+    return saved;
+  });
   void publishJukeProfiles().catch((error) => console.error("Could not publish Juke profiles", error));
 
   server.handle(setAgentLoopPaused, ({ agentId, paused }, context) => setByUser(context.paseo, agentId, paused));

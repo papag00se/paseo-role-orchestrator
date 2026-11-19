@@ -52,7 +52,7 @@ Open **Settings → Plugins → Role Orchestrator → Roles and delegation**, cr
 
 <p align="center"><img src="docs/media/role-setup.png" width="520" alt="Editing the Supervisor role in Paseo: name, delegation description, provider, model, reasoning level, mode, role prompt, completion checking, and allowed child roles with their context"></p>
 
-**Check completion of the whole ask** in a role hands that role's turns to [Juke](https://github.com/papag00se/paseo-juke-plugin)'s strict profile. Set the judge under Juke's **Strict judge model**. Without Juke installed the setting has no effect.
+**Check completion of the whole ask** in a role hands that role's turns to [Juke](https://github.com/papag00se/paseo-juke-plugin)'s strict profile. Choose its model under **Completion judge** (default: each agent's own model). Without Juke installed the setting has no effect.
 
 ## Compatibility
 
