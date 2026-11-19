@@ -33,6 +33,17 @@ export const RoleSchema = z.object({
     /** Subagents this role's agents create must use the worker provider and may only message their parent. */
     restrictChildCommunication: z.boolean().default(false),
   }),
+  /** Prompt-cache lifetime for this role's agents. Null: long for roles that may delegate, short otherwise. */
+  promptCacheRetention: z.enum(["short", "long"]).nullable().default(null),
+  /**
+   * Compact the context once it reaches `triggerTokens`. Null, or a value at or above the model's
+   * window, leaves the provider's normal compaction alone. `contextWindowTokens` is the model's window
+   * as known when the role was saved, so the launch can turn the trigger into a reserve.
+   */
+  compaction: z.object({
+    triggerTokens: z.number().int().min(1000).max(100_000_000).nullable(),
+    contextWindowTokens: z.number().int().min(1000).max(100_000_000).nullable(),
+  }).default({ triggerTokens: null, contextWindowTokens: null }),
   /** After a context compaction, send the agent its role contract again. Checked when a turn ends. */
   rereadAfterCompaction: z.boolean().default(false),
   /** Send `prompt` to every live agent of this role every `minutes` minutes, queued while the agent is busy. */
@@ -103,6 +114,13 @@ export const launchRoleRpc = defineRpc({
   output: z.object({ agentId: z.string(), roleId, roleName: z.string() }),
 });
 
+/** The model's context window in tokens when the plugin can tell (Pi's model catalog); null otherwise. */
+export const getContextWindow = defineRpc({
+  name: "roles.context-window",
+  input: z.object({ provider: z.string().trim().min(1).max(160), model: z.string().trim().min(1).max(240) }),
+  output: z.object({ tokens: z.number().int().nullable() }),
+});
+
 export const deleteRole = defineRpc({
   name: "roles.delete",
   input: z.object({ id: roleId }),
@@ -110,6 +128,8 @@ export const deleteRole = defineRpc({
 });
 
 export const ROLE_LABEL = "paseo-role-orchestrator.role-id";
+/** The model the agent actually launched with (a launch may override the role's), read when its session opens. */
+export const MODEL_LABEL = "paseo-role-orchestrator.model";
 /** Stamped on an agent at launch when its role restricts child communication; the value never changes afterwards. */
 export const CHILD_POLICY_LABEL = "paseo-role-orchestrator.child-policy";
 export const CHILD_POLICY_PARENT_ONLY = "parent-only";

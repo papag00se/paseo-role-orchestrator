@@ -1,5 +1,5 @@
 import type { PaseoApi } from "@getpaseo/client";
-import { CHILD_POLICY_LABEL, CHILD_POLICY_PARENT_ONLY, CHILD_PROVIDER_REFUSAL, ROLE_LABEL, WORKER_PROVIDER, providerModel, systemPromptForRole, type Role } from "../shared/roles";
+import { CHILD_POLICY_LABEL, CHILD_POLICY_PARENT_ONLY, CHILD_PROVIDER_REFUSAL, MODEL_LABEL, ROLE_LABEL, WORKER_PROVIDER, providerModel, systemPromptForRole, type Role } from "../shared/roles";
 import { sanctionedLaunchLabels } from "./child-policy";
 import { getRoles } from "./roles";
 
@@ -193,6 +193,7 @@ export async function launchRole(
     prompt: childPrompt,
     labels: {
       [ROLE_LABEL]: child.id,
+      [MODEL_LABEL]: model,
       ...(child.delegation.restrictChildCommunication ? { [CHILD_POLICY_LABEL]: CHILD_POLICY_PARENT_ONLY } : {}),
     },
     config: {
