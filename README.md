@@ -30,7 +30,7 @@
 | 🔁 Re-read after compaction | Optional per-role setting: after a context compaction the agent is sent its role contract again |
 | ⏰ Periodic prompt | Optional per-role setting: send a prompt to every live agent of the role every N minutes, queued while it is busy |
 | ⏸️ Pause the loop | `pause_loop` / `resume_loop` agent tools (any real prompt wakes the agent) and `/roles-pause-agent-loop` / `/roles-resume-agent-loop` for a pause only you can lift |
-| ✅ Completion gate | An independent judge model checks finished turns (original plugin) |
+| ✅ Completion checking | Roles opt in to Juke's strict whole-ask check (requires Juke) |
 
 ## How it fits
 
@@ -50,11 +50,9 @@ paseo plugin install "$PWD"
 
 Open **Settings → Plugins → Role Orchestrator → Roles and delegation**, create your roles, then launch them from the workspace **Roles** panel. Each role runs as a normal Paseo agent using its configured provider.
 
-<p align="center"><img src="docs/media/role-setup.png" width="520" alt="Editing the Supervisor role in Paseo: name, delegation description, provider, model, reasoning level, mode, role prompt, completion gate, and allowed child roles with their context"></p>
+<p align="center"><img src="docs/media/role-setup.png" width="520" alt="Editing the Supervisor role in Paseo: name, delegation description, provider, model, reasoning level, mode, role prompt, completion checking, and allowed child roles with their context"></p>
 
-**Completion gate** settings set the judge's provider, model, reasoning level and prompt once for every role that enables the gate.
-
-![Role Orchestrator completion gate settings in Paseo: judge provider, model, reasoning level and gate prompt](docs/media/settings-completion-gate.png)
+**Check completion of the whole ask** in a role hands that role's turns to [Juke](https://github.com/papag00se/paseo-juke-plugin)'s strict profile. Set the judge under Juke's **Strict judge model**. Without Juke installed the setting has no effect.
 
 ## Compatibility
 

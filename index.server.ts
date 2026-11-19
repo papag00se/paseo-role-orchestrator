@@ -1,13 +1,12 @@
 import type { PluginServerContext } from "@getpaseo/plugin/server";
-import { getCompletionGateSettings, installCompletionGate, saveCompletionGateSettings } from "./server/completion-gate";
-import { addRole, editRole, getRoles, removeRole } from "./server/roles";
+import { addRole, editRole, getRoles, publishJukeProfiles, removeRole } from "./server/roles";
 import { installPeriodicPrompts } from "./server/periodic-prompts";
 import { installCompactionReread } from "./server/compaction-reread";
 import { installChildPolicy } from "./server/child-policy";
 import { installRoleTools } from "./server/role-tools";
 import { installLoopControl, setByUser } from "./server/loop-control";
 import { setAgentLoopPaused } from "./shared/loop-pause";
-import { createRole, deleteRole, getCompletionGateSettings as getCompletionGateSettingsRpc, launchRoleRpc, listRoles, saveCompletionGateSettings as saveCompletionGateSettingsRpc, updateRole } from "./shared/roles";
+import { createRole, deleteRole, launchRoleRpc, listRoles, updateRole } from "./shared/roles";
 
 export default function contribute(server: PluginServerContext) {
   const periodic = installPeriodicPrompts();
@@ -15,8 +14,8 @@ export default function contribute(server: PluginServerContext) {
   server.handle(createRole, addRole);
   server.handle(updateRole, editRole);
   server.handle(deleteRole, removeRole);
-  server.handle(getCompletionGateSettingsRpc, getCompletionGateSettings);
-  server.handle(saveCompletionGateSettingsRpc, saveCompletionGateSettings);
+  // Completion checking for gated roles is done by Juke's strict profile.
+  void publishJukeProfiles().catch((error) => console.error("Could not publish Juke profiles", error));
 
   server.handle(setAgentLoopPaused, ({ agentId, paused }, context) => setByUser(context.paseo, agentId, paused));
 
@@ -42,19 +41,15 @@ export default function contribute(server: PluginServerContext) {
     server.on(name, async (_event, { paseo }) => { periodic.connect(paseo); (await tools).connect(paseo); }),
   );
 
-  // The completion gate judges every finished turn of a gate-enabled role; a yielded or
-  // progress-only turn is sent back to work instead of being accepted as completion.
   const removeChildPolicy = installChildPolicy(server, tools);
   const removeLoopControl = installLoopControl(server, tools);
 
-  const removeCompletionGate = installCompletionGate(server);
   const removeCompactionReread = installCompactionReread(server);
   return () => {
     periodic.close();
     removeChildPolicy();
     removeLoopControl();
     removeCompactionReread();
-    removeCompletionGate();
     removeConnectors.forEach((remove) => remove());
     void tools.then((runtime) => runtime.close()).catch(() => undefined);
   };
