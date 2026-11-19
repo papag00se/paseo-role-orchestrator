@@ -1,10 +1,11 @@
 import type { PluginClientContext } from "@getpaseo/plugin/client";
 import { LoopRowSchema, LOOP_ROW_KIND, setAgentLoopPaused } from "./shared/loop-pause";
-import { RoleAgentPanel, RoleCatalogSurface, RoleWorkspacePanel } from "./client/main";
+import { CompletionJudgeSettingsPage, RoleAgentPanel, RoleCatalogSurface, RoleWorkspacePanel } from "./client/main";
 import { LoopStateRow } from "./client/loop-state-row";
 
 export default function contribute(client: PluginClientContext) {
   client.addSettingsScreen({ id: "roles", title: "Roles and delegation", icon: "Network", Component: RoleCatalogSurface });
+  client.addSettingsScreen({ id: "completion-judge", title: "Completion judge", icon: "CheckCheck", Component: CompletionJudgeSettingsPage });
   client.addCommandCenterItem({ id: "settings", title: "Role Orchestrator settings", icon: "Network", context: "global", onSelect: ({ openSettings }) => openSettings("roles") });
   client.addWorkspacePanel({
     id: "roles-workspace",

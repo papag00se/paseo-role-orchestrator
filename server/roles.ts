@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { RoleSchema, type Role, type RoleDraft } from "../shared/roles";
 import { syncJukeProfiles } from "./juke-profiles";
+import { getCompletionJudge } from "./completion-judge";
 
 interface StoredRoles {
   version: 1;
@@ -44,7 +45,7 @@ async function save(data: StoredRoles): Promise<void> {
   await writeFile(temporary, `${JSON.stringify(data, null, 2)}\n`, { mode: 0o600 });
   await rename(temporary, file);
   // Keep Juke's view of which roles want completion checking in step with every change.
-  await syncJukeProfiles(data.roles).catch((error) => console.error("Could not update Juke profiles", error));
+  await getCompletionJudge().then((judge) => syncJukeProfiles(data.roles, judge)).catch((error) => console.error("Could not update Juke profiles", error));
 }
 
 let mutationChain = Promise.resolve();
@@ -61,7 +62,7 @@ function mutate<T>(operation: (data: StoredRoles) => T | Promise<T>): Promise<T>
 
 /** Publish the current completion-checking roles to Juke once at load. */
 export async function publishJukeProfiles(): Promise<void> {
-  await syncJukeProfiles((await load()).roles);
+  await syncJukeProfiles((await load()).roles, await getCompletionJudge());
 }
 
 export async function getRoles() {

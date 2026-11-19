@@ -16,6 +16,9 @@ import { buildRoleRunTree, COMPLETION_AGENT_LABEL, fetchRoleAgents, PARENT_AGENT
 import {
   createRole,
   deleteRole,
+  getCompletionJudge,
+  saveCompletionJudge,
+  type CompletionJudge,
   launchRoleRpc,
   listRoles,
   ROLE_LABEL,
@@ -427,7 +430,7 @@ function RoleEditor({
               style={[styles.choice, draft.delegation.completionGateEnabled && styles.choiceSelected]}
             >
               <Icon name={draft.delegation.completionGateEnabled ? "CheckSquare" : "Square"} size={18} color={draft.delegation.completionGateEnabled ? theme.colors.accent : theme.colors.foregroundMuted} />
-              <View style={styles.grow}><Text style={styles.secondaryText}>Check completion of the whole ask</Text><Text style={styles.hint}>Juke judges every completed turn of this role on the whole user ask and sends it back to work if anything runnable remains. Requires the Juke plugin; set its judge under Juke's "Strict judge model".</Text></View>
+              <View style={styles.grow}><Text style={styles.secondaryText}>Check completion of the whole ask</Text><Text style={styles.hint}>Juke judges every completed turn of this role on the whole user ask and sends it back to work if anything runnable remains. Requires the Juke plugin. The judge model is set under "Completion judge".</Text></View>
             </Pressable>
           </View>
           <View style={styles.section}>
@@ -503,6 +506,52 @@ function RoleCard({ role, theme, styles, onEdit, onDelete }: { role: Role; theme
       <Text style={styles.detail}>{role.delegation.enabled ? `May invoke ${allowed} role${allowed === 1 ? "" : "s"}` : "Cannot invoke child roles"}</Text>
     </View>
   );
+}
+
+const SAME_AS_AGENT = "__same-as-agent__";
+
+function CompletionJudgeCard({ hostId, theme, styles }: { hostId: string; theme: PluginSurfaceProps["theme"]; styles: ReturnType<typeof stylesFor> }) {
+  const queryClient = useQueryClient();
+  const toast = useToast();
+  const get = useRpc(getCompletionJudge);
+  const save = useRpc(saveCompletionJudge);
+  const settingsQuery = useQuery({ queryKey: ["role-orchestrator", hostId, "completion-judge"], queryFn: () => get({}) });
+  const catalog = useProviderCatalog();
+  const [draft, setDraft] = useState<CompletionJudge | null>(null);
+  useEffect(() => { if (settingsQuery.data) setDraft(settingsQuery.data); }, [settingsQuery.data]);
+  if (!draft) return settingsQuery.isError
+    ? <Text accessibilityRole="alert" style={styles.dangerText}>Could not load the completion judge: {settingsQuery.error.message}</Text>
+    : <ActivityIndicator color={theme.colors.accent} />;
+  const providers = (catalog.data ?? []).filter((entry) => entry.enabled && (entry.status === "ready" || entry.provider === draft.provider));
+  const provider = providers.find((entry) => entry.provider === draft.provider);
+  const models = (provider?.models ?? []).filter((model) => model.isSelectable !== false);
+  const providerOptions = [
+    { id: SAME_AS_AGENT, label: "Same as the agent being judged", description: "Use each role agent's own provider and model" },
+    ...providers.map((entry) => ({ id: entry.provider, label: entry.label ?? entry.provider, description: entry.description ?? entry.provider })),
+  ];
+  const modelOptions = models.map((model) => ({ id: model.id, label: model.label, description: model.description ?? model.id }));
+  const thinkingOptions = (models.find((model) => model.id === draft.model)?.thinkingOptions ?? []).map((option) => ({ id: option.id, label: option.label, description: option.description ?? option.id }));
+  const same = !draft.provider;
+  const saveDraft = async () => {
+    try {
+      await save(draft);
+      await queryClient.invalidateQueries({ queryKey: ["role-orchestrator", hostId, "completion-judge"] });
+      toast.show("Completion judge saved", { variant: "success" });
+    } catch (error) { toast.error(error instanceof Error ? error.message : "Unable to save the completion judge"); }
+  };
+  return <View style={styles.card}>
+    <View style={styles.header}><Text style={[styles.name, styles.grow]}>Completion judge</Text><Button label="Save" kind="primary" onPress={() => void saveDraft()} theme={theme} styles={styles} icon="Save" /></View>
+    <Text style={styles.detail}>Roles with completion checking on are judged by the Juke plugin on the whole user ask. This is the model Juke uses for them. By default each agent is judged by its own model.</Text>
+    <Picker label="Provider" value={same ? SAME_AS_AGENT : draft.provider} options={providerOptions} placeholder="Choose a provider" emptyMessage="No ready providers are available." theme={theme} styles={styles} onSelect={(providerId) => setDraft({ provider: !providerId || providerId === SAME_AS_AGENT ? "" : providerId, model: "", thinkingOptionId: null })} />
+    {same ? null : <Picker label="Model" value={draft.model || null} options={modelOptions} placeholder="Choose a model" emptyMessage="No selectable models are available." theme={theme} styles={styles} onSelect={(modelId) => { const model = models.find((candidate) => candidate.id === modelId); setDraft({ ...draft, model: modelId ?? "", thinkingOptionId: model?.defaultThinkingOptionId ?? null }); }} />}
+    {same ? null : <Picker label="Reasoning level" value={draft.thinkingOptionId} options={thinkingOptions} placeholder="Use provider default" emptyMessage="This model does not expose reasoning levels." theme={theme} styles={styles} onSelect={(thinkingOptionId) => setDraft({ ...draft, thinkingOptionId })} />}
+    {!same && !draft.model ? <Text style={styles.hint}>Choose a model. Until then, each agent is judged by its own model.</Text> : null}
+  </View>;
+}
+
+export function CompletionJudgeSettingsPage({ theme, host, layout }: PluginSurfaceProps) {
+  const styles = useMemo(() => stylesFor(theme, layout.compact), [layout.compact, theme]);
+  return <View style={styles.content}><CompletionJudgeCard hostId={host.id} theme={theme} styles={styles} /></View>;
 }
 
 export function RoleCatalogSurface({ theme, host, layout }: PluginSurfaceProps) {

@@ -68,6 +68,26 @@ export const updateRole = defineRpc({
   output: z.object({ role: RoleSchema }),
 });
 
+/** The judge Juke uses for roles with completion checking on. Empty provider: the judged agent's own model. */
+export const CompletionJudgeSchema = z.object({
+  provider: z.string().trim().max(160),
+  model: z.string().trim().max(240),
+  thinkingOptionId: z.string().trim().max(160).nullable(),
+});
+export type CompletionJudge = z.infer<typeof CompletionJudgeSchema>;
+
+export const getCompletionJudge = defineRpc({
+  name: "completion-judge.get",
+  input: z.object({}),
+  output: CompletionJudgeSchema,
+});
+
+export const saveCompletionJudge = defineRpc({
+  name: "completion-judge.save",
+  input: CompletionJudgeSchema,
+  output: CompletionJudgeSchema,
+});
+
 export const launchRoleRpc = defineRpc({
   name: "roles.launch",
   input: z.object({
