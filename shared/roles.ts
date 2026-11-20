@@ -68,6 +68,13 @@ export const updateRole = defineRpc({
   output: z.object({ role: RoleSchema }),
 });
 
+/**
+ * Completion checking is done by the Juke plugin, which cannot be switched on for users yet. While this
+ * is false the setting and the Completion judge page are hidden. A role that already has the setting
+ * on keeps it, shows it so it can be turned off, and is still handed to Juke through its profile file.
+ */
+export const COMPLETION_CHECKING_AVAILABLE = false;
+
 /** The judge Juke uses for roles with completion checking on. Empty provider: the judged agent's own model. */
 export const CompletionJudgeSchema = z.object({
   provider: z.string().trim().max(160),

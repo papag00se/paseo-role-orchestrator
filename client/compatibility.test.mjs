@@ -55,7 +55,7 @@ function nodes(tree) {
 test('current client entry preserves settings, contextual panels and settings action', () => {
   const settings=[], panels=[], commands=[], slash=[], renderers=[];
   const cleanup=contribute({addSettingsScreen:x=>settings.push(x),addWorkspacePanel:x=>panels.push(x),addCommandCenterItem:x=>commands.push(x),addSlashCommand:x=>slash.push(x),addTimelineRenderer:x=>renderers.push(x)});
-  assert.deepEqual(settings.map(x=>x.id),['roles','completion-judge']);
+  assert.deepEqual(settings.map(x=>x.id),['roles']);
   assert.equal(settings[0].Component,RoleCatalogSurface);
   assert.deepEqual(panels.map(x=>[x.id,x.context]),[['roles-workspace','workspace'],['roles-agent','agent']]);
   assert.equal(panels[0].Component,RoleWorkspacePanel);

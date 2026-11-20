@@ -14,6 +14,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { buildRoleRunTree, COMPLETION_AGENT_LABEL, fetchRoleAgents, PARENT_AGENT_LABEL, type RoleRunAgent } from "../shared/role-runs";
 import {
+  COMPLETION_CHECKING_AVAILABLE,
   createRole,
   deleteRole,
   getCompletionJudge,
@@ -421,7 +422,7 @@ function RoleEditor({
             <TextInput value={draft.periodicPrompt.prompt} onChangeText={(prompt) => update({ periodicPrompt: { ...draft.periodicPrompt, prompt } })} multiline textAlignVertical="top" placeholder="What to tell the agent each time, for example a list of things to check. End with: If there is nothing to do, call pause_loop." placeholderTextColor={theme.colors.foregroundMuted} style={[styles.input, { minHeight: 90 }]} />
             <Text style={styles.hint}>Sent to each running agent with this role. If the agent is busy it waits for the turn to finish, and at most one is ever pending. Archived or closed agents are skipped.</Text>
           </View>
-          <View style={styles.section}>
+          {COMPLETION_CHECKING_AVAILABLE || draft.delegation.completionGateEnabled ? <View style={styles.section}>
             <Text style={styles.sectionTitle}>Completion</Text>
             <Pressable
               accessibilityRole="checkbox"
@@ -432,7 +433,7 @@ function RoleEditor({
               <Icon name={draft.delegation.completionGateEnabled ? "CheckSquare" : "Square"} size={18} color={draft.delegation.completionGateEnabled ? theme.colors.accent : theme.colors.foregroundMuted} />
               <View style={styles.grow}><Text style={styles.secondaryText}>Check completion of the whole ask</Text><Text style={styles.hint}>Juke judges every completed turn of this role on the whole user ask and sends it back to work if anything runnable remains. Requires the Juke plugin. The judge model is set under "Completion judge".</Text></View>
             </Pressable>
-          </View>
+          </View> : null}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Delegation</Text>
             <Pressable
