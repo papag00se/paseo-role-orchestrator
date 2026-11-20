@@ -4,6 +4,7 @@ import { installPeriodicPrompts } from "./server/periodic-prompts";
 import { installCompactionReread } from "./server/compaction-reread";
 import { installChildPolicy } from "./server/child-policy";
 import { installRoleTools } from "./server/role-tools";
+import { ManualLaunchSummary } from "./server/role-launch";
 import { installLoopControl, setByUser } from "./server/loop-control";
 import { setAgentLoopPaused } from "./shared/loop-pause";
 import { createRole, deleteRole, getCompletionJudge as getCompletionJudgeRpc, launchRoleRpc, listRoles, saveCompletionJudge as saveCompletionJudgeRpc, updateRole } from "./shared/roles";
@@ -30,7 +31,12 @@ export default function contribute(server: PluginServerContext) {
   const tools = installRoleTools();
   server.handle(launchRoleRpc, async (input, context) => {
     periodic.connect(context.paseo);
-    const result = await (await tools).launch(context.paseo, input);
+    // This is the panel path: nobody is in a tool call to write a summary, and the child starts on
+    // its own task. A role set to Summary context gets an explicit placeholder instead of failing.
+    const result = await (await tools).launch(context.paseo, {
+      ...input,
+      ...(input.parent ? { contextSummary: ManualLaunchSummary } : {}),
+    });
     return { agentId: result.agentId, roleId: result.role.id, roleName: result.role.name };
   });
 
