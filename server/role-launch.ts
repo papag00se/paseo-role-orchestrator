@@ -5,6 +5,9 @@ import { getRoles } from "./roles";
 
 export type ParentContext = "none" | "full" | "summary";
 
+/** What a manual launch from the Child roles panel passes where a parent would have written a summary. */
+export const ManualLaunchSummary = "<no summary - initial turn, launched manually from the Child roles panel>";
+
 /**
  * Raised when a launch uses Summary context and the parent has not written the summary yet. The
  * parent's own session writes it, so no other agent ever reads the parent's timeline.
