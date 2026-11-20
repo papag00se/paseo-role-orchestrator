@@ -3,12 +3,7 @@ import { CHILD_POLICY_LABEL, CHILD_POLICY_PARENT_ONLY, CHILD_PROVIDER_REFUSAL, R
 import { sanctionedLaunchLabels } from "./child-policy";
 import { getRoles } from "./roles";
 
-export type ParentContext = "none" | "full" | "summary";
-
-export const CONTEXT_HELPER_LABEL = "paseo-role-orchestrator.context-helper";
-
-const SUMMARY_SYSTEM_PROMPT =
-  "You prepare accurate delegation context. Return only a concise, faithful summary of the supplied timeline. Do not use tools, modify files, or attempt implementation.";
+export type ParentContext = "none" | "full";
 
 export interface LaunchRequest {
   /** Present for delegation; absent for a root role launched from the workspace panel. */
@@ -74,39 +69,6 @@ async function completeParentTimeline(paseo: PaseoApi, parentAgentId: string): P
   return JSON.stringify(entries);
 }
 
-async function summarizeParentTimeline(
-  paseo: PaseoApi,
-  workspaceId: string,
-  parentAgentId: string,
-  parent: { provider: string; model: string | null; thinkingOptionId?: string | null; currentModeId?: string | null },
-  timeline: string,
-): Promise<string> {
-  if (!parent.model) {
-    throw new Error("The parent agent has no current model to use for a context summary");
-  }
-  const helper = await paseo.workspaces.ref(workspaceId).agents.create({
-    parent: parentAgentId,
-    title: "Preparing child context",
-    prompt: `Summarize this complete parent-agent timeline for a child agent. Preserve the user's goal, requirements, constraints, relevant repository paths, decisions, findings, work already completed, current state, and explicit acceptance criteria. Do not perform the task or add assumptions.\n\n## Complete parent timeline\n\n${timeline}`,
-    labels: { [CONTEXT_HELPER_LABEL]: "true", ...sanctionedLaunchLabels() },
-    config: {
-      provider: `${parent.provider}/${parent.model}`,
-      ...(parent.thinkingOptionId ? { thinkingOptionId: parent.thinkingOptionId } : {}),
-      ...(parent.currentModeId ? { modeId: parent.currentModeId } : {}),
-      systemPrompt: SUMMARY_SYSTEM_PROMPT,
-    },
-  });
-  try {
-    const result = await helper.waitForFinish();
-    if (result.status !== "idle" || !result.lastMessage) {
-      throw new Error(result.error || `Context summary agent ended with status: ${result.status}`);
-    }
-    return result.lastMessage;
-  } finally {
-    await helper.archive().catch(() => undefined);
-  }
-}
-
 /**
  * The one server-side role launch. The workspace panel, the child-roles panel and the
  * `launch_role` tool all route here, so a role run is identical however it was started:
@@ -153,9 +115,6 @@ export async function launchRole(
 
   let workspaceId = request.workspaceId;
   let cwd: string | null = null;
-  let parentSnapshot:
-    | { provider: string; model: string | null; thinkingOptionId?: string | null; currentModeId?: string | null }
-    | undefined;
   if (request.parent) {
     const snapshot = await paseo.agents.ref(request.parent.agentId).refresh();
     const agent = snapshot?.agent;
@@ -168,7 +127,6 @@ export async function launchRole(
     }
     workspaceId = agent.workspaceId;
     cwd = agent.cwd;
-    parentSnapshot = agent;
   }
   if (!workspaceId) throw new Error("A workspace is required to launch a role.");
 
@@ -178,10 +136,7 @@ export async function launchRole(
   let childPrompt = prompt;
   if (request.parent && parentContext !== "none") {
     const timeline = await completeParentTimeline(paseo, request.parent.agentId);
-    childPrompt +=
-      parentContext === "full"
-        ? `\n\n## Parent session context (complete and unedited)\n\n${timeline}`
-        : `\n\n## Parent session context summary\n\n${await summarizeParentTimeline(paseo, workspaceId, request.parent.agentId, parentSnapshot!, timeline)}`;
+    childPrompt += `\n\n## Parent session context (complete and unedited)\n\n${timeline}`;
   }
 
   const systemPrompt = systemPromptForRole(child, roles);

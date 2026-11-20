@@ -22,7 +22,7 @@
 | --- | --- |
 | 🧩 Reusable roles | Name, prompt, provider, model, reasoning level and mode, saved once |
 | 🤝 Controlled delegation | Each role lists exactly which roles it may launch |
-| 📦 Context per child | No parent context, the full session, or a summary |
+| 📦 Context per child | No parent context or the full session; the parent can write a summary into the task prompt itself |
 | 🚀 Native launch panels | A **Roles** panel per workspace and a **Child roles** panel per agent |
 | 🛠️ Role-aware tools | `list_roles` and `launch_role` only offer what the caller is allowed |
 | 🌳 Visible hierarchy | Parents, children and helper agents show up in the normal workspace |
