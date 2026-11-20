@@ -20,7 +20,7 @@ Validation on 0.11.2: typecheck and all 63 tests passed. Live reload reported `r
 
 - Persisted daemon-local role catalog.
 - Role settings: provider, model, reasoning level, optional provider mode, a parent-facing delegation description, and system prompt.
-- Per-role delegation policy: `Can invoke other roles`, an allowed-child-role checklist, and a mutually exclusive child-context policy: none, or the complete unedited parent timeline. There is no summary option: a parent that wants to pass part of its context writes it into the task prompt, so no helper agent ever reads the timeline. A stored `summary` setting from an earlier version reads as none. Parent roles receive an appended delegation appendix containing only their allowed child names/descriptions and the relevant built-in Paseo child-management tools.
+- Per-role delegation policy: `Can invoke other roles`, an allowed-child-role checklist, and a mutually exclusive child-context policy: none, the complete unedited parent timeline, or a summary that the parent session writes itself. Parent roles receive an appended delegation appendix containing only their allowed child names/descriptions and the relevant built-in Paseo child-management tools.
 - Root-role launcher in the workspace `Roles` panel.
 - Child-role launcher in an agent's `Child roles` panel, restricted to that parent role's checklist.
 - Real Paseo parent/child relationships and role labels.
@@ -29,7 +29,7 @@ Validation on 0.11.2: typecheck and all 63 tests passed. Live reload reported `r
 
 Run client compatibility, extraction, summarization, and lifecycle integration tests with `npm test` on Node with TypeScript stripping and `registerHooks` support (Node 22.18+). Integration tests cover missing model-window metadata, all verdict dispositions, overflow recovery, stale results, failed parent turns, prose-wrapped verdict extraction, the constrained malformed-verdict retry, and the fail-closed continuation with preserved raw judge output. Provider responses are mocked; these tests do not replace a live model smoke test.
 
-The task text entered when launching an agent is separate from the role's persistent system prompt. Full-context delegation attaches every canonical timeline entry without truncation; if that exceeds the child model's context window, the provider error is preserved.
+The task text entered when launching an agent is separate from the role's persistent system prompt. Full-context delegation attaches every canonical timeline entry without truncation; if that exceeds the child model's context window, the provider error is preserved. Summary delegation uses no other agent: `launch_role` with a summary context and no `contextSummary` launches nothing and tells the parent to write the summary from its own session and call `launch_role` again with the same arguments plus `contextSummary`, which is attached to the child's prompt. The parent already holds its whole session, so nothing else reads the timeline and no extra permissions or tokens are involved.
 
 ## Permission behavior
 

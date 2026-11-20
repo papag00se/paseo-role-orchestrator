@@ -3,7 +3,17 @@ import { CHILD_POLICY_LABEL, CHILD_POLICY_PARENT_ONLY, CHILD_PROVIDER_REFUSAL, R
 import { sanctionedLaunchLabels } from "./child-policy";
 import { getRoles } from "./roles";
 
-export type ParentContext = "none" | "full";
+export type ParentContext = "none" | "full" | "summary";
+
+/**
+ * Raised when a launch uses Summary context and the parent has not written the summary yet. The
+ * parent's own session writes it, so no other agent ever reads the parent's timeline.
+ */
+export class ContextSummaryRequired extends Error {
+  constructor() {
+    super("This launch uses Summary context, so the parent session must write the summary.");
+  }
+}
 
 export interface LaunchRequest {
   /** Present for delegation; absent for a root role launched from the workspace panel. */
@@ -14,6 +24,8 @@ export interface LaunchRequest {
   title?: string;
   prompt: string;
   parentContext?: ParentContext;
+  /** The summary the parent session wrote of its own work; required when the context is a summary. */
+  contextSummary?: string;
   /** Model ID within the role's provider; defaults to the role's model. */
   model?: string;
   /** Null selects the provider default; omission uses the role's configured level. */
@@ -134,9 +146,13 @@ export async function launchRole(
     ? (request.parentContext ?? parentRole!.delegation.childContexts[child.id] ?? "none")
     : "none";
   let childPrompt = prompt;
-  if (request.parent && parentContext !== "none") {
+  if (request.parent && parentContext === "full") {
     const timeline = await completeParentTimeline(paseo, request.parent.agentId);
     childPrompt += `\n\n## Parent session context (complete and unedited)\n\n${timeline}`;
+  } else if (request.parent && parentContext === "summary") {
+    const summary = request.contextSummary?.trim();
+    if (!summary) throw new ContextSummaryRequired();
+    childPrompt += `\n\n## Parent session context summary (written by the parent)\n\n${summary}`;
   }
 
   const systemPrompt = systemPromptForRole(child, roles);
