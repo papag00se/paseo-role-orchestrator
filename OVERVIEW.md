@@ -1,4 +1,4 @@
-Role Orchestrator lets you define reusable Paseo agent roles with their own instructions, provider, model, and delegation permissions. Launch roles from a workspace and allow selected roles to launch children with no parent context, a summary, or the full session.
+Role Orchestrator lets you define reusable Paseo agent roles with their own instructions, provider, model, and delegation permissions. Launch roles from a workspace and allow selected roles to launch children with no parent context or the full session.
 
 Requires Paseo 0.14 through 0.16. Create roles in the plugin settings, choose their providers and models, and configure which child roles they may launch. A role can opt in to completion checking, which the Juke plugin performs: it judges the role's turns on the whole user ask.
 

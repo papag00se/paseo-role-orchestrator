@@ -126,9 +126,9 @@ export const LAUNCH_SCHEMA = {
     },
     parentContext: {
       type: "string",
-      enum: ["none", "summary", "full"],
+      enum: ["none", "full"],
       description:
-        'How much of your own session the child inherits. Defaults to the configured value for this role pair. "summary" costs one short helper run; "full" attaches your complete timeline unedited.',
+        'How much of your own session the child inherits. Defaults to the configured value for this role pair. "full" attaches your complete timeline unedited. To pass along only part of it, leave this "none" and write the context the child needs into `prompt` yourself.',
     },
     model: {
       type: "string",
@@ -327,7 +327,7 @@ export async function installRoleTools(): Promise<RoleToolsRuntime> {
         throw new Error("`thinkingOptionId` must be a non-empty option ID of at most 160 characters, or null for the provider default.");
       }
       const parentContext =
-        args.parentContext === "none" || args.parentContext === "summary" || args.parentContext === "full"
+        args.parentContext === "none" || args.parentContext === "full"
           ? (args.parentContext as ParentContext)
           : undefined;
 
