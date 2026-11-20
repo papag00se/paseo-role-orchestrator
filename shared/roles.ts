@@ -28,7 +28,7 @@ export const RoleSchema = z.object({
   delegation: z.object({
     enabled: z.boolean(),
     allowedRoleIds: z.array(roleId).max(64),
-    childContexts: z.record(roleId, z.enum(["none", "full"]).catch("none")).default({}),
+    childContexts: z.record(roleId, z.enum(["none", "full", "summary"])).default({}),
     completionGateEnabled: z.boolean().default(false),
     /** Subagents this role's agents create must use the worker provider and may only message their parent. */
     restrictChildCommunication: z.boolean().default(false),
@@ -96,7 +96,7 @@ export const launchRoleRpc = defineRpc({
     role: z.string().min(1),
     title: z.string().trim().max(200).optional(),
     prompt: z.string().min(1),
-    parentContext: z.enum(["none", "full"]).optional(),
+    parentContext: z.enum(["none", "full", "summary"]).optional(),
     model: z.string().trim().min(1).max(240).optional(),
     thinkingOptionId: z.string().trim().min(1).max(160).nullable().optional(),
   }),

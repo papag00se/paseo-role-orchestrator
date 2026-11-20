@@ -11,6 +11,7 @@ import { getRoles } from "./roles";
 import { EMPTY_SCHEMA, PAUSE_LOOP_DESCRIPTION, RESUME_LOOP_DESCRIPTION, pauseByAgent, resumeByAgent } from "./loop-control";
 import {
   allowedChildRoles,
+  ContextSummaryRequired,
   launchRole,
   type LaunchRequest,
   type ParentContext,
@@ -126,9 +127,14 @@ export const LAUNCH_SCHEMA = {
     },
     parentContext: {
       type: "string",
-      enum: ["none", "full"],
+      enum: ["none", "summary", "full"],
       description:
-        'How much of your own session the child inherits. Defaults to the configured value for this role pair. "full" attaches your complete timeline unedited. To pass along only part of it, leave this "none" and write the context the child needs into `prompt` yourself.',
+        'How much of your own session the child inherits. Defaults to the configured value for this role pair. "summary" uses a summary that you write yourself in `contextSummary`; no other agent is involved. "full" attaches your complete timeline unedited.',
+    },
+    contextSummary: {
+      type: "string",
+      description:
+        'Required when the context is "summary": your own summary of this session for the child. Include the user\'s goal, requirements and constraints, relevant paths, decisions, findings, work done, current state and acceptance criteria. If you omit it, the launch does not happen and you are asked to write it and call launch_role again with the same arguments.',
     },
     model: {
       type: "string",
@@ -327,19 +333,32 @@ export async function installRoleTools(): Promise<RoleToolsRuntime> {
         throw new Error("`thinkingOptionId` must be a non-empty option ID of at most 160 characters, or null for the provider default.");
       }
       const parentContext =
-        args.parentContext === "none" || args.parentContext === "full"
+        args.parentContext === "none" || args.parentContext === "summary" || args.parentContext === "full"
           ? (args.parentContext as ParentContext)
           : undefined;
 
-      const result = await launch(requirePaseo(), {
-        parent: { agentId: grant.parentAgentId, roleId: grant.parentRoleId },
-        role,
-        title: typeof args.title === "string" ? args.title : undefined,
-        prompt,
-        parentContext,
-        model: args.model as string | undefined,
-        thinkingOptionId: args.thinkingOptionId as string | null | undefined,
-      });
+      let result: Awaited<ReturnType<typeof launch>>;
+      try {
+        result = await launch(requirePaseo(), {
+          parent: { agentId: grant.parentAgentId, roleId: grant.parentRoleId },
+          role,
+          title: typeof args.title === "string" ? args.title : undefined,
+          prompt,
+          parentContext,
+          contextSummary: typeof args.contextSummary === "string" ? args.contextSummary : undefined,
+          model: args.model as string | undefined,
+          thinkingOptionId: args.thinkingOptionId as string | null | undefined,
+        });
+      } catch (error) {
+        if (!(error instanceof ContextSummaryRequired)) throw error;
+        // Nothing was launched. The caller is the parent session, so it writes its own summary.
+        return {
+          launched: false,
+          needsContextSummary: true,
+          instruction:
+            "This launch uses Summary context. Write a summary of your own session for the child (the user's goal, requirements and constraints, relevant paths, decisions, findings, work done, current state and acceptance criteria), then call launch_role again with the same arguments plus it as `contextSummary`.",
+        };
+      }
       return {
         agentId: result.agentId,
         role: result.role.name,
