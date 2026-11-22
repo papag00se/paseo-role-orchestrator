@@ -18,6 +18,7 @@ import {
   createRole,
   deleteRole,
   getCompletionJudge,
+  getContextWindow,
   saveCompletionJudge,
   type CompletionJudge,
   launchRoleRpc,
@@ -58,6 +59,8 @@ const blankRole = (): RoleDraft => ({
   thinkingOptionId: null,
   modeId: null,
   systemPrompt: "",
+  promptCacheRetention: null,
+  compaction: { triggerTokens: null, contextWindowTokens: null },
   rereadAfterCompaction: false,
   periodicPrompt: { enabled: false, minutes: 30, prompt: "" },
   delegation: { enabled: false, allowedRoleIds: [], childContexts: {}, completionGateEnabled: false, restrictChildCommunication: false }
@@ -281,7 +284,8 @@ function RoleEditor({
 }) {
   const [draft, setDraft] = useState<RoleDraft>(blankRole);
   const providerCatalog = useProviderCatalog();
-  useEffect(() => setDraft(role ? roleDraft(role) : blankRole()), [role, open]);
+  const [triggerText, setTriggerText] = useState<string | null>(null);
+  useEffect(() => { setDraft(role ? roleDraft(role) : blankRole()); setTriggerText(null); }, [role, open]);
   const update = (patch: Partial<RoleDraft>) => setDraft((current) => ({ ...current, ...patch }));
   const providerEntries = (providerCatalog.data ?? []).filter(
     (entry) => entry.enabled && (entry.status === "ready" || entry.provider === draft.provider),
@@ -289,6 +293,23 @@ function RoleEditor({
   const selectedProvider = providerEntries.find((entry) => entry.provider === draft.provider);
   const models = (selectedProvider?.models ?? []).filter((model) => model.isSelectable !== false);
   const selectedModel = models.find((model) => model.id === draft.model);
+  // The model's window: the provider's own figure when it reports one, else Pi's catalog through the plugin.
+  const isPi = draft.provider === "pi" || draft.provider === "pi-worker";
+  const callWindow = useRpc(getContextWindow);
+  const catalogWindow = useQuery({
+    queryKey: ["role-orchestrator", "context-window", draft.model],
+    queryFn: () => callWindow({ provider: draft.provider, model: draft.model }),
+    enabled: open && isPi && Boolean(draft.model) && !selectedModel?.contextWindowMaxTokens,
+  });
+  const contextWindow = selectedModel?.contextWindowMaxTokens ?? catalogWindow.data?.tokens ?? null;
+  useEffect(() => {
+    if (contextWindow && contextWindow !== draft.compaction.contextWindowTokens) {
+      setDraft((current) => ({ ...current, compaction: { ...current.compaction, contextWindowTokens: contextWindow } }));
+    } else if (!contextWindow && draft.model && !catalogWindow.isLoading && draft.compaction.contextWindowTokens !== null) {
+      setDraft((current) => ({ ...current, compaction: { triggerTokens: null, contextWindowTokens: null } }));
+    }
+  }, [contextWindow, draft.model, catalogWindow.isLoading]);
+  const cacheDefault = draft.delegation.enabled ? "long" : "short";
   const providerOptions: PickerOption[] = providerEntries.map((entry) => ({
     id: entry.provider,
     label: entry.label ?? entry.provider,
@@ -347,7 +368,7 @@ function RoleEditor({
             emptyMessage="No ready providers are available. Check Paseo provider setup."
             theme={theme}
             styles={styles}
-            onSelect={(provider) => update({ provider: provider ?? "", model: "", thinkingOptionId: null, modeId: null })}
+            onSelect={(provider) => { setTriggerText(null); update({ provider: provider ?? "", model: "", thinkingOptionId: null, modeId: null, compaction: { triggerTokens: null, contextWindowTokens: null } }); }}
           />
           <Picker
             label="Model"
@@ -359,7 +380,8 @@ function RoleEditor({
             styles={styles}
             onSelect={(model) => {
               const next = models.find((candidate) => candidate.id === model);
-              update({ model: model ?? "", thinkingOptionId: next?.defaultThinkingOptionId ?? null });
+              setTriggerText(null);
+              update({ model: model ?? "", thinkingOptionId: next?.defaultThinkingOptionId ?? null, compaction: { triggerTokens: null, contextWindowTokens: null } });
             }}
           />
           <Picker
@@ -385,6 +407,37 @@ function RoleEditor({
           <View>
             <Text style={styles.label}>System / role prompt</Text>
             <TextInput value={draft.systemPrompt} onChangeText={(systemPrompt) => update({ systemPrompt })} multiline textAlignVertical="top" placeholder="Persistent instructions for every agent launched with this role." placeholderTextColor={theme.colors.foregroundMuted} style={[styles.input, { minHeight: 150 }]} />
+          </View>
+          <Picker
+            label="Prompt cache retention"
+            value={draft.promptCacheRetention ?? cacheDefault}
+            options={[
+              { id: "short", label: "Short", description: "The provider's normal cache lifetime (minutes)." },
+              { id: "long", label: "Long", description: "Extended lifetime where the provider supports it: about an hour on Anthropic, up to 24 hours on OpenAI, through Pi. Best for agents that work for a long time or wait on children." },
+            ]}
+            placeholder="Short"
+            emptyMessage="No options."
+            theme={theme}
+            styles={styles}
+            onSelect={(value) => update({ promptCacheRetention: value === "long" ? "long" : "short" })}
+          />
+          <Text style={styles.hint}>Default: long for roles that can invoke other roles, short for the rest. Only Pi providers (pi, pi-worker) have a setting for this; it does nothing on others, for example Codex.</Text>
+          <View>
+            <Text style={styles.label}>Compaction trigger (tokens)</Text>
+            <TextInput
+              value={triggerText ?? (contextWindow ? String(draft.compaction.triggerTokens ?? contextWindow) : "")}
+              editable={Boolean(contextWindow)}
+              keyboardType="number-pad"
+              onChangeText={(text) => {
+                setTriggerText(text);
+                const tokens = Number.parseInt(text.replace(/\D/g, ""), 10);
+                update({ compaction: { ...draft.compaction, triggerTokens: Number.isFinite(tokens) && contextWindow && tokens >= 1000 && tokens < contextWindow ? tokens : null } });
+              }}
+              placeholder={isPi ? "Choose a model first" : "Not available for this provider"}
+              placeholderTextColor={theme.colors.foregroundMuted}
+              style={styles.input}
+            />
+            <Text style={styles.hint}>{contextWindow ? `Compact the context at this many tokens. Defaults to the model's window (${contextWindow.toLocaleString()}), which is normal compaction; lower it to compact earlier. A value at or above the window is ignored.` : "Needs a known context window. Only Pi providers support it; other providers compact on their own schedule."}</Text>
           </View>
           <Pressable
             accessibilityRole="checkbox"

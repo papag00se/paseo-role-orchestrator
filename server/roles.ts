@@ -17,6 +17,15 @@ const file = join(
   "role-orchestrator.json",
 );
 
+/** A trigger at or above the window is the same as no trigger. */
+function cleanCompaction(input: RoleDraft["compaction"]): RoleDraft["compaction"] {
+  const { triggerTokens, contextWindowTokens } = input;
+  if (triggerTokens === null || (contextWindowTokens !== null && triggerTokens >= contextWindowTokens)) {
+    return { triggerTokens: null, contextWindowTokens };
+  }
+  return input;
+}
+
 function clean(input: unknown): StoredRoles {
   if (!input || typeof input !== "object" || !("roles" in input) || !Array.isArray(input.roles)) {
     return { version: 1, roles: [] };
@@ -88,6 +97,8 @@ export async function addRole(draft: RoleDraft) {
         completionGateEnabled: draft.delegation.completionGateEnabled,
         restrictChildCommunication: draft.delegation.restrictChildCommunication,
       },
+      promptCacheRetention: draft.promptCacheRetention,
+      compaction: cleanCompaction(draft.compaction),
       rereadAfterCompaction: draft.rereadAfterCompaction,
       periodicPrompt: draft.periodicPrompt,
       createdAt: now,
@@ -120,6 +131,8 @@ export async function editRole(input: RoleDraft & { id: string }) {
         completionGateEnabled: input.delegation.completionGateEnabled,
         restrictChildCommunication: input.delegation.restrictChildCommunication,
       },
+      promptCacheRetention: input.promptCacheRetention,
+      compaction: cleanCompaction(input.compaction),
       rereadAfterCompaction: input.rereadAfterCompaction,
       periodicPrompt: input.periodicPrompt,
       createdAt: prior.createdAt,

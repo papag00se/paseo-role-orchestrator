@@ -2,9 +2,11 @@ import { randomUUID } from "node:crypto";
 import { chmod, mkdir, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { delimiter, join } from "node:path";
-import type { PluginServerContext } from "@getpaseo/plugin/server";
+import type { PaseoApi } from "@getpaseo/client";
+import type { PluginServerContext, PluginSessionOpenRequest } from "@getpaseo/plugin/server";
 import { PARENT_AGENT_LABEL } from "../shared/role-runs";
 import { CHILD_POLICY_LABEL, CHILD_POLICY_PARENT_ONLY, CHILD_PROVIDER_REFUSAL, WORKER_PROVIDER } from "../shared/roles";
+import { applyRoleLaunchOptions } from "./launch-options";
 import { WORKER_SERVER_KEY, type RoleToolsRuntime } from "./role-tools";
 
 /**
@@ -45,25 +47,32 @@ async function ensureShim(): Promise<string> {
  */
 export function installChildPolicy(server: PluginServerContext, tools: Promise<RoleToolsRuntime>): () => void {
   return server.before("agent.session_open", async ({ request }, { paseo }) => {
-    const parentId = request.labels[PARENT_AGENT_LABEL];
-    if (request.purpose !== "interactive" || !parentId) return;
-    const pass = request.labels[SANCTIONED_LABEL];
-    if (request.reason === "create" && pass && passes.delete(pass)) return;
-
-    const runtime = await tools;
-    runtime.connect(paseo);
-    const parent = (await paseo.agents.ref(parentId).refresh())?.agent;
-    if (parent?.labels[CHILD_POLICY_LABEL] !== CHILD_POLICY_PARENT_ONLY) return;
-
-    if (request.provider !== WORKER_PROVIDER) {
-      if (request.reason === "create") throw new Error(CHILD_PROVIDER_REFUSAL);
-      return;
-    }
-    const binDirectory = await ensureShim();
-    return {
-      ...request,
-      env: { ...request.env, PATH: [binDirectory, process.env.PATH].filter(Boolean).join(delimiter) },
-      mcpServers: { ...request.mcpServers, [WORKER_SERVER_KEY]: runtime.workerMcpServer(request.agentId) },
-    };
+    const restricted = (await restrictChildren(request, paseo, tools)) ?? request;
+    // The role's launch options (cache lifetime, compaction trigger) apply on top of the policy's result.
+    const result = request.purpose === "interactive" ? await applyRoleLaunchOptions(restricted) : restricted;
+    return result === request ? undefined : result;
   });
+}
+
+async function restrictChildren(request: PluginSessionOpenRequest, paseo: PaseoApi, tools: Promise<RoleToolsRuntime>) {
+  const parentId = request.labels[PARENT_AGENT_LABEL];
+  if (request.purpose !== "interactive" || !parentId) return;
+  const pass = request.labels[SANCTIONED_LABEL];
+  if (request.reason === "create" && pass && passes.delete(pass)) return;
+
+  const runtime = await tools;
+  runtime.connect(paseo);
+  const parent = (await paseo.agents.ref(parentId).refresh())?.agent;
+  if (parent?.labels[CHILD_POLICY_LABEL] !== CHILD_POLICY_PARENT_ONLY) return;
+
+  if (request.provider !== WORKER_PROVIDER) {
+    if (request.reason === "create") throw new Error(CHILD_PROVIDER_REFUSAL);
+    return;
+  }
+  const binDirectory = await ensureShim();
+  return {
+    ...request,
+    env: { ...request.env, PATH: [binDirectory, process.env.PATH].filter(Boolean).join(delimiter) },
+    mcpServers: { ...request.mcpServers, [WORKER_SERVER_KEY]: runtime.workerMcpServer(request.agentId) },
+  };
 }
