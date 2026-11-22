@@ -7,12 +7,14 @@ import { installRoleTools } from "./server/role-tools";
 import { ManualLaunchSummary } from "./server/role-launch";
 import { installLoopControl, setByUser } from "./server/loop-control";
 import { setAgentLoopPaused } from "./shared/loop-pause";
-import { createRole, deleteRole, getCompletionJudge as getCompletionJudgeRpc, launchRoleRpc, listRoles, saveCompletionJudge as saveCompletionJudgeRpc, updateRole } from "./shared/roles";
+import { piContextWindow } from "./server/launch-options";
+import { createRole, getContextWindow, deleteRole, getCompletionJudge as getCompletionJudgeRpc, launchRoleRpc, listRoles, saveCompletionJudge as saveCompletionJudgeRpc, updateRole } from "./shared/roles";
 import { getCompletionJudge, saveCompletionJudge } from "./server/completion-judge";
 
 export default function contribute(server: PluginServerContext) {
   const periodic = installPeriodicPrompts();
   server.handle(listRoles, (_input, context) => { periodic.connect(context.paseo); return getRoles(); });
+  server.handle(getContextWindow, async ({ model }) => ({ tokens: await piContextWindow(model) }));
   server.handle(createRole, addRole);
   server.handle(updateRole, editRole);
   server.handle(deleteRole, removeRole);
