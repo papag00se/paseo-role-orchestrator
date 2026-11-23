@@ -5,6 +5,7 @@ import { installCompactionReread } from "./server/compaction-reread";
 import { installChildPolicy } from "./server/child-policy";
 import { installRoleTools } from "./server/role-tools";
 import { ManualLaunchSummary } from "./server/role-launch";
+import { securePiAgentDirs } from "./server/launch-options";
 import { installLoopControl, setByUser } from "./server/loop-control";
 import { setAgentLoopPaused } from "./shared/loop-pause";
 import { piContextWindow } from "./server/launch-options";
@@ -25,6 +26,7 @@ export default function contribute(server: PluginServerContext) {
     await publishJukeProfiles();
     return saved;
   });
+  void securePiAgentDirs().catch((error) => console.error("Could not tighten generated Pi settings permissions", error));
   void publishJukeProfiles().catch((error) => console.error("Could not publish Juke profiles", error));
 
   server.handle(setAgentLoopPaused, ({ agentId, paused }, context) => setByUser(context.paseo, agentId, paused));
