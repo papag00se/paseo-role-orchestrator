@@ -1,5 +1,5 @@
-import { createHash } from "node:crypto";
-import { mkdir, readdir, readFile, symlink, writeFile } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { chmod, mkdir, readdir, readFile, rename, symlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { MODEL_LABEL, ROLE_LABEL, type Role } from "../shared/roles";
@@ -55,6 +55,25 @@ export async function piContextWindow(model: string): Promise<number | null> {
   return windows[0] ?? null;
 }
 
+const piAgentDirRoot = () => join(process.env.PASEO_HOME || join(homedir(), ".paseo"), "plugin-data", "role-orchestrator-pi-agent");
+
+/**
+ * The generated directories hold a copy of the user's Pi settings, so only the user may read them:
+ * directories 0700 and `settings.json` 0600, whatever the umask was when an older copy was made.
+ * Runs at plugin load; a directory that does not exist yet is created private by `piAgentDirWithReserve`.
+ */
+export async function securePiAgentDirs(): Promise<void> {
+  const root = piAgentDirRoot();
+  let names: string[];
+  try { names = await readdir(root); } catch { return; }
+  await chmod(root, 0o700).catch(() => undefined);
+  for (const name of names) {
+    const dir = join(root, name);
+    await chmod(dir, 0o700).catch(() => undefined);
+    await chmod(join(dir, "settings.json"), 0o600).catch(() => undefined);
+  }
+}
+
 /**
  * Pi has no per-session switch for compaction, only settings files, so a launch with a trigger gets
  * its own agent directory: every entry of the user's Pi directory linked in (credentials, sessions,
@@ -64,13 +83,20 @@ export async function piContextWindow(model: string): Promise<number | null> {
 export async function piAgentDirWithReserve(model: string, reserveTokens: number): Promise<string> {
   const base = piHome();
   const key = createHash("sha256").update(`${base}\n${model}\n${reserveTokens}`).digest("hex").slice(0, 16);
-  const dir = join(process.env.PASEO_HOME || join(homedir(), ".paseo"), "plugin-data", "role-orchestrator-pi-agent", key);
-  await mkdir(dir, { recursive: true });
+  const dir = join(piAgentDirRoot(), key);
+  await mkdir(dir, { recursive: true, mode: 0o700 });
+  await chmod(piAgentDirRoot(), 0o700);
+  await chmod(dir, 0o700);
   let settings: Record<string, any> = {};
   try { settings = JSON.parse(await readFile(join(base, "settings.json"), "utf8")); } catch { /* no user settings */ }
   const compaction = { ...(settings.compaction ?? {}) };
   compaction.modelOverrides = { ...(compaction.modelOverrides ?? {}), [model]: { ...(compaction.modelOverrides?.[model] ?? {}), reserveTokens } };
-  await writeFile(join(dir, "settings.json"), `${JSON.stringify({ ...settings, compaction }, null, 2)}\n`);
+  // Written private and swapped in whole, so a copy an older version made with looser permissions is replaced too.
+  const target = join(dir, "settings.json");
+  const temporary = `${target}.tmp-${process.pid}-${randomUUID()}`;
+  await writeFile(temporary, `${JSON.stringify({ ...settings, compaction }, null, 2)}\n`, { mode: 0o600 });
+  await chmod(temporary, 0o600);
+  await rename(temporary, target);
   const existing = new Set(await readdir(dir));
   for (const name of await readdir(base)) {
     if (name === "settings.json" || existing.has(name) || /\.(tmp|bak.*)$/.test(name)) continue;

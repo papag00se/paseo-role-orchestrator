@@ -3,7 +3,7 @@
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { registerHooks } from 'node:module';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readlinkSync, existsSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readlinkSync, existsSync, rmSync, statSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -14,6 +14,7 @@ registerHooks({resolve(specifier, context, next) {
   throw error;
  }
 }});
+process.umask(0o022); // a typical host: new files would be world-readable
 const home = mkdtempSync(join(tmpdir(), 'launch-options-'));
 const pi = join(home, 'pi');
 mkdirSync(join(home, 'plugin-data'), { recursive: true });
@@ -30,7 +31,7 @@ const role = (over = {}) => ({ id: ID, name: 'R', description: '', provider: 'pi
  promptCacheRetention: null, compaction: { triggerTokens: null, contextWindowTokens: null },
  delegation: { enabled: false, allowedRoleIds: [], childContexts: {}, completionGateEnabled: false, restrictChildCommunication: false }, createdAt: 'now', updatedAt: 'now', ...over });
 const store = (r) => writeFileSync(join(home, 'plugin-data', 'role-orchestrator.json'), JSON.stringify({ version: 1, roles: [r] }));
-const { cacheEnv, compactionReserve, effectiveCacheRetention, piContextWindow, applyRoleLaunchOptions } = await import('./launch-options.ts');
+const { cacheEnv, compactionReserve, effectiveCacheRetention, piContextWindow, applyRoleLaunchOptions, securePiAgentDirs } = await import('./launch-options.ts');
 const open = (provider, labels) => ({ provider, labels, env: { KEEP: '1' } });
 
 test('cache retention defaults long for delegating roles and short otherwise; explicit choice wins', () => {
@@ -73,6 +74,19 @@ test('a role agent gets the cache env; the trigger gives it its own Pi directory
  assert.equal(settings.compaction.modelOverrides['a/other'].reserveTokens, 9);
  assert.equal(readlinkSync(join(dir, 'auth.json')), join(pi, 'auth.json'));
  assert.equal(JSON.parse(readFileSync(join(pi, 'settings.json'), 'utf8')).compaction.modelOverrides['anthropic/claude-big'], undefined);
+ // The copy holds the user's private Pi settings, so it is private even when the umask is 022.
+ assert.equal(statSync(join(dir, 'settings.json')).mode & 0o777, 0o600);
+ assert.equal(statSync(dir).mode & 0o777, 0o700);
+});
+
+test('a copy an older version made with loose permissions is tightened', async () => {
+ const old = join(home, 'plugin-data', 'role-orchestrator-pi-agent', 'old');
+ mkdirSync(old, { recursive: true });
+ writeFileSync(join(old, 'settings.json'), '{}');
+ chmodSync(old, 0o755); chmodSync(join(old, 'settings.json'), 0o644);
+ await securePiAgentDirs();
+ assert.equal(statSync(join(old, 'settings.json')).mode & 0o777, 0o600);
+ assert.equal(statSync(old).mode & 0o777, 0o700);
 });
 
 test('the launched model (a per-launch override) is the one that gets the reserve', async () => {
